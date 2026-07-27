@@ -1,0 +1,11 @@
+<RCC>
+    <qresource prefix="/prompts">
+        <file alias="agent_core.md">resources/agent_core.md</file>
+        <file alias="enterprise_personality.md">resources/enterprise_personality.md</file>
+        <file alias="enterprise_quotes.md">resources/enterprise_quotes.md</file>
+    </qresource>
+
+<qresource prefix="/avatar">
+    <file alias="enterprise.png">resources/enterprise.png</file>
+</qresource>
+</RCC>

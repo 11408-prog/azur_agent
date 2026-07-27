@@ -1,0 +1,71 @@
+#ifndef MESSAGEBUBBLEWIDGET_H
+#define MESSAGEBUBBLEWIDGET_H
+
+#include <QWidget>
+#include <QString>
+#include <QStringList>
+
+class QLabel;
+class QVBoxLayout;
+class QTextBrowser;
+class ElaText;
+class ElaScrollPageArea;
+
+class MessageBubbleWidget : public QWidget
+{
+    Q_OBJECT
+
+public:
+    explicit MessageBubbleWidget(bool isUser, QWidget *parent = nullptr);
+    ~MessageBubbleWidget() override;
+
+    // ---- 用户消息（纯文本） ----
+    void setUserContent(const QString &text);
+
+    // ---- AI 消息（Markdown 渲染） ----
+    void setAiContent(const QString &markdown);
+    void setAiStreamingContent(const QString &plainText);
+    QTextBrowser *aiContentBrowser() const;
+
+    // ---- 步骤指示器（仅 Chat 模式使用） ----
+    void enableStepIndicator(bool enable);
+    bool isStepIndicatorEnabled() const;
+    void updateStep(const QString &text);
+    void finishStep(bool success, const QString &finalText);
+    void spinnerTick(int frame);
+
+    // ---- 时间戳 ----
+    void setTimestamp(const QString &ts);
+
+    // ---- 全局头像目录配置 ----
+    static void setAvatarDirectory(const QString &dir);
+
+private:
+    void initUI();
+    QLabel *createAvatar();
+    void createStepIndicator();
+
+    bool isUser_;
+    QLabel *avatar_;
+    ElaScrollPageArea *bubble_;
+    QVBoxLayout *bubbleLayout_;
+    QTextBrowser *contentBrowser_;
+    ElaText *userText_;
+    QLabel *timeLabel_;
+
+    // 步骤指示器
+    QWidget *stepRow_ = nullptr;
+    QLabel *stepIcon_ = nullptr;
+    QLabel *stepText_ = nullptr;
+    bool stepIndicatorEnabled_ = false;
+
+    static QString s_avatarDir;
+
+    // ---- 大文本惰性渲染 ----
+    static constexpr int kLazyRenderThreshold = 2000;
+    static constexpr int kLazyRenderInitialLines = 100;
+    QString fullMarkdown_;
+    void renderFullContent();
+};
+
+#endif // MESSAGEBUBBLEWIDGET_H

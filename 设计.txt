@@ -1,0 +1,7 @@
+prompts/
+
+├── agent_core.md
+│
+├── enterprise_personality.md   
+│
+├── enterprise_quotes.md        ← 收集的全部台词
