@@ -533,7 +533,7 @@ void ProjectPage::appendMessage(const QString &text, bool isUser)
             bubble->setAiContent(text);
         } else {
             // 无内容：流式占位，显示旋转动画
-            bubble->setAiStreamingContent("⠋");
+            bubble->setAiStreamingContent(QStringLiteral("思考中 ⠋"));
             bubble->startContentSpinner();
         }
         currentAiBubble_ = bubble;
@@ -574,8 +574,20 @@ void ProjectPage::onSendClicked()
         return;
     }
 
+    // engine_ 是 Chat 模式和 Project 模式共用的同一个实例：如果此刻并不是
+    // Project 自己在等回复（isWaitingResponse_ 为 false），但引擎却处于占用状态，
+    // 说明 Chat 模式正有一个请求在跑，直接 start() 会悄悄把它 cancel 掉且不通知对方。
+    if (!isWaitingResponse_ && engine_->isBusy()) {
+        ElaMessageBar::warning(ElaMessageBarType::TopRight, "提示",
+                               "对话模式正有请求在处理中，请稍后再发送，或先取消", 3000);
+        return;
+    }
+
     const QString text = inputEdit_->toPlainText().trimmed();
     if (text.isEmpty()) return;
+
+    // 同步"Agent 权限"设置（每次确认 / 自动执行）到引擎
+    engine_->setAutoExecute(settings.value("agentPermission", 0).toInt() == 1);
 
     appendMessage(text, true);
     inputEdit_->clear();
@@ -594,6 +606,10 @@ void ProjectPage::onSendClicked()
 
     engine_->start(apiKey, baseUrl, model, messageHistory_,
                    systemPrompt_, ToolExecutor::toolDefinitions(), projectPath_);
+
+    // 之前这里遗漏了禁用输入框：isWaitingResponse_ 从未被置为 true，
+    // 导致用户可以在 AI 还在生成时反复点发送/按回车，叠加发出多个请求。
+    setInputEnabled(false);
 }
 
 // ==================== AI 响应处理 ====================
@@ -677,6 +693,12 @@ void ProjectPage::restoreConversation(const QList<QJsonObject> &messages)
 {
     messageHistory_ = messages;
     clearChatDisplay();
+
+    // 切换项目/切换对话时，之前遗留的活动步骤（读文件/写文件/执行命令等记录）
+    // 也应该一并清空，否则不同项目/对话的活动记录会一直混在一起累积。
+    if (activityPanel_) {
+        activityPanel_->clear();
+    }
 
     // 重绘所有历史消息
     for (const QJsonObject &msg : messages) {

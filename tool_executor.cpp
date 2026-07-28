@@ -280,8 +280,11 @@ QJsonArray ToolExecutor::toolDefinitions()
 
 bool ToolExecutor::isWriteTool(const QString &toolName)
 {
+    // run_command 能执行任意 shell 命令（包括黑名单没覆盖到的破坏性操作），
+    // 风险并不比直接写文件低，所以也纳入"需要用户确认"的范围。
     bool result = toolName == QLatin1String("write_file")
-           || toolName == QLatin1String("apply_patch");
+           || toolName == QLatin1String("apply_patch")
+           || toolName == QLatin1String("run_command");
     qDebug()<<"[TOOL_EXEC] isWriteTool | toolName="<<toolName<<"|结果="<<result;
     return result;
 }
@@ -507,6 +510,71 @@ QString ToolExecutor::writeFile(const QString &workspaceRoot, const QJsonObject 
     return QString("成功写入文件 %1（%2 行）").arg(relPath).arg(content.count('\n') + 1);
 }
 
+bool ToolExecutor::applyPatchesToContent(const QString &originalContent, const QJsonArray &patches,
+                                          QString *outContent, QStringList *resultsOut,
+                                          QString *failureMessage)
+{
+    QString content = originalContent;
+    QStringList results;
+
+    for (int i = 0; i < patches.size(); ++i) {
+        const QJsonObject patch = patches[i].toObject();
+        const QString search = patch["search"].toString();
+        const QString replace = patch["replace"].toString();
+
+        if (search.isEmpty()) {
+            if (failureMessage) {
+                *failureMessage = QString("apply_patch 失败：\npatch[%1] 错误：search 不能为空").arg(i);
+            }
+            return false;
+        }
+
+        int pos = content.indexOf(search);
+        int matchLen = search.size();
+        bool usedFuzzyMatch = false;
+
+        if (pos == -1) {
+            // 精确匹配失败，尝试忽略每行首尾空白的容错匹配——
+            // AI生成的代码经常在缩进/行尾空白上跟文件本身有细微出入
+            int fuzzyStart = -1, fuzzyLen = 0;
+            if (findFuzzyLineMatch(content, search, &fuzzyStart, &fuzzyLen)) {
+                pos = fuzzyStart;
+                matchLen = fuzzyLen;
+                usedFuzzyMatch = true;
+            }
+        }
+
+        if (pos == -1) {
+            if (failureMessage) {
+                *failureMessage = QString("apply_patch 失败：\n") + results.join('\n')
+                    + QString("\npatch[%1]: 未在文件中找到匹配的内容（已尝试忽略空白差异的匹配，仍未找到）:\n```\n%2\n```")
+                          .arg(i).arg(search.left(200));
+            }
+            return false;
+        }
+
+        if (!usedFuzzyMatch) {
+            // 只有精确匹配才需要额外查"是否唯一"；模糊匹配内部已经保证了唯一性
+            const int secondPos = content.indexOf(search, pos + 1);
+            if (secondPos != -1) {
+                if (failureMessage) {
+                    *failureMessage = QString("apply_patch 失败：\npatch[%1]: 找到多处匹配，请提供更多上下文以确保唯一匹配。"
+                                   "匹配文本:\n```\n%2\n```").arg(i).arg(search.left(200));
+                }
+                return false;
+            }
+        }
+
+        // 执行替换
+        content.replace(pos, matchLen, replace);
+        results << QString(usedFuzzyMatch ? "patch[%1] 成功（使用了空白容错匹配）" : "patch[%1] 成功").arg(i);
+    }
+
+    if (outContent) *outContent = content;
+    if (resultsOut) *resultsOut = results;
+    return true;
+}
+
 QString ToolExecutor::applyPatch(const QString &workspaceRoot, const QJsonObject &args,
                                   bool *ok, QString *displayLabel, QString *diffOutput)
 {
@@ -553,56 +621,13 @@ QString ToolExecutor::applyPatch(const QString &workspaceRoot, const QJsonObject
         return QString("错误：\"%1\" 看起来是二进制文件，无法进行 patch 操作").arg(relPath);
     }
 
-    QString content = QString::fromUtf8(fileData);
+    const QString originalContent = QString::fromUtf8(fileData);
+    QString content;
     QStringList results;
-
-    // 逐个应用 patch
-    for (int i = 0; i < patches.size(); ++i) {
-        const QJsonObject patch = patches[i].toObject();
-        const QString search = patch["search"].toString();
-        const QString replace = patch["replace"].toString();
-
-        if (search.isEmpty()) {
-            results << QString("patch[%1] 错误：search 不能为空").arg(i);
-            continue;
-        }
-
-        int pos = content.indexOf(search);
-        int matchLen = search.size();
-        bool usedFuzzyMatch = false;
-
-        if (pos == -1) {
-            // 精确匹配失败，尝试忽略每行首尾空白的容错匹配——
-            // AI生成的代码经常在缩进/行尾空白上跟文件本身有细微出入
-            int fuzzyStart = -1, fuzzyLen = 0;
-            if (findFuzzyLineMatch(content, search, &fuzzyStart, &fuzzyLen)) {
-                pos = fuzzyStart;
-                matchLen = fuzzyLen;
-                usedFuzzyMatch = true;
-            }
-        }
-
-        if (pos == -1) {
-            results << QString("patch[%1] 错误：未找到匹配的文本（已尝试忽略空白差异的匹配，仍未找到）").arg(i);
-            *ok = false;
-            // 不继续执行，防止部分修改导致文件状态不一致
-            return QString("apply_patch 失败：\n") + results.join('\n')
-                   + QString("\npatch[%1]: 未在文件中找到匹配的内容:\n```\n%2\n```").arg(i).arg(search.left(200));
-        }
-
-        if (!usedFuzzyMatch) {
-            // 只有精确匹配才需要额外查"是否唯一"；模糊匹配内部已经保证了唯一性
-            const int secondPos = content.indexOf(search, pos + 1);
-            if (secondPos != -1) {
-                *ok = false;
-                return QString("apply_patch 失败：\npatch[%1]: 找到多处匹配，请提供更多上下文以确保唯一匹配。"
-                               "匹配文本:\n```\n%2\n```").arg(i).arg(search.left(200));
-            }
-        }
-
-        // 执行替换
-        content.replace(pos, matchLen, replace);
-        results << QString(usedFuzzyMatch ? "patch[%1] 成功（使用了空白容错匹配）" : "patch[%1] 成功").arg(i);
+    QString failureMessage;
+    if (!applyPatchesToContent(originalContent, patches, &content, &results, &failureMessage)) {
+        *ok = false;
+        return failureMessage;
     }
 
     // 写出修改后的内容
@@ -619,7 +644,7 @@ QString ToolExecutor::applyPatch(const QString &workspaceRoot, const QJsonObject
 
     // 生成 diff
     if (diffOutput) {
-        *diffOutput = generateDiff(QString::fromUtf8(fileData), content, relPath);
+        *diffOutput = generateDiff(originalContent, content, relPath);
     }
 
     return QString("成功对 %1 应用了 %2 个 patch\n%3").arg(relPath).arg(patches.size()).arg(results.join('\n'));
@@ -801,22 +826,43 @@ QString ToolExecutor::previewDiff(const QString &workspaceRoot, const QString &t
             return QString("错误：二进制文件，无法预览");
         }
 
-        QString content = QString::fromUtf8(fileData);
-        for (int i = 0; i < patches.size(); ++i) {
-            const QJsonObject patch = patches[i].toObject();
-            const QString search = patch["search"].toString();
-            const QString replace = patch["replace"].toString();
-            if (search.isEmpty()) continue;
-
-            const int pos = content.indexOf(search);
-            if (pos != -1) {
-                content.replace(pos, search.size(), replace);
-            }
+        // 用跟 applyPatch() 完全相同的一套逻辑（模糊匹配 fallback + 多处匹配检测），
+        // 保证这里预览出来的 diff 和真正点"接受"之后执行的结果一致。
+        const QString originalContent = QString::fromUtf8(fileData);
+        QString content;
+        QStringList results;
+        QString failureMessage;
+        if (!applyPatchesToContent(originalContent, patches, &content, &results, &failureMessage)) {
+            *ok = false;
+            *displayLabel = QString("预览修改 %1（匹配失败）").arg(relPath);
+            return failureMessage;
         }
 
         *ok = true;
         *displayLabel = QString("预览修改 %1 (%2 个 patch)").arg(relPath).arg(patches.size());
-        return generateDiff(QString::fromUtf8(fileData), content, relPath);
+        return generateDiff(originalContent, content, relPath);
+    }
+
+    if (toolName == QLatin1String("run_command")) {
+        const QString command = arguments.value("command").toString().trimmed();
+        *displayLabel = QString("待执行命令: %1").arg(command.left(60));
+
+        if (command.isEmpty()) {
+            *ok = false;
+            return QStringLiteral("错误：未提供 command 参数");
+        }
+
+        QString blockReason;
+        if (isBlacklistedCommand(command, &blockReason)) {
+            *ok = false;
+            *displayLabel = QString("命令被拒绝: %1").arg(command.left(40));
+            return QString("错误：%1").arg(blockReason);
+        }
+
+        *ok = true;
+        return QString("⚙️ 即将在项目目录下执行命令：\n\n%1\n\n工作目录: %2\n\n"
+                        "（提示：命令不受工作区路径限制，请确认命令本身是安全的）")
+            .arg(command, workspaceRoot);
     }
 
     *ok = false;
@@ -845,15 +891,30 @@ bool ToolExecutor::isBlacklistedCommand(const QString &command, QString *reason)
         "sudo", "doas", "pkexec",
     };
 
-    // rm 只拦截带 -rf / -r / -f 破坏性标志的情况
+    // rm 只拦截带 -rf / -r / -f 破坏性标志的情况。
+    // 逐 token 检查而不是简单子串匹配：像 "rm -irf" "rm -Rf" "rm -fri" 这类把
+    // recursive/force 和其它短选项合并在一起写的形式，用固定子串（" -rf"/" -fr" 等）
+    // 是catch不全的，必须挨个拆开短选项簇里的字符判断。
     if (base == "rm" || base == "rmdir") {
-        if (cmd.contains(" -rf") || cmd.contains(" -fr")
-            || cmd.contains(" -r ") || cmd.contains(" -f ")
-            || cmd.contains(" --recursive") || cmd.contains(" --force")) {
-            if (reason) *reason = QString("禁止递归/强制删除文件: %1").arg(command);
-            return true;
+        const QStringList tokens = cmd.split(' ', Qt::SkipEmptyParts);
+        for (const QString &tok : tokens) {
+            if (tok.startsWith(QStringLiteral("--"))) {
+                // 长选项：--recursive / --force / --force-with-lease 等
+                if (tok.startsWith(QStringLiteral("--recursive")) || tok.startsWith(QStringLiteral("--force"))) {
+                    if (reason) *reason = QString("禁止递归/强制删除文件: %1").arg(command);
+                    return true;
+                }
+                continue;
+            }
+            if (tok.startsWith('-') && tok.size() > 1) {
+                // 短选项簇，例如 -rf / -Rf / -irf / -fri，只要含 r 或 f 就判定为危险
+                if (tok.contains('r') || tok.contains('f')) {
+                    if (reason) *reason = QString("禁止递归/强制删除文件: %1").arg(command);
+                    return true;
+                }
+            }
         }
-        // 允许 rm 单个文件
+        // 没有危险标志（例如 "rm somefile.txt"），允许
         return false;
     }
 

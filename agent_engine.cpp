@@ -144,8 +144,9 @@ void AgentEngine::onToolCallsReceived(const QJsonArray &toolCalls)
         }
     }
     qDebug()<<"[ENDINE] 收到工具调用请求 | 工具数量"<<toolCalls.size()
-             <<" | 是否有写操作="<<(hasWrite ? "是" : "否");
-    if (hasWrite) {
+             <<" | 是否有写操作="<<(hasWrite ? "是" : "否")
+             <<" | autoExecute_="<<(autoExecute_ ? "是" : "否");
+    if (hasWrite && !autoExecute_) {
         qDebug()<<"[ENGINE] 触发写确认 | 等待用户响应";
         // 生成预览 diff，等待用户确认
         pendingToolCalls_ = toolCalls;
@@ -156,7 +157,13 @@ void AgentEngine::onToolCallsReceived(const QJsonArray &toolCalls)
         return;
     }
 
-    // 没有写操作，直接执行
+    if (hasWrite) {
+        // 设置页选择了"自动执行"：跳过确认弹窗，但仍然在步骤面板里如实标注，
+        // 避免用户完全不知道 AI 自己执行了写操作/命令。
+        emit stepChanged("⚙ Agent 权限=自动执行，跳过确认直接执行");
+    }
+
+    // 没有写操作，或已设置自动执行，直接执行
     executeToolCalls(toolCalls);
 }
 

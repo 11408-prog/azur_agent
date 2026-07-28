@@ -1,39 +1,29 @@
-# Build
-build/
-build_fresh/
+# Build directories
+build*/
 cmake-build-*/
-CMakeFiles/
-CMakeCache.txt
-Makefile
-*.o
-*.obj
-*.exe
 
 # IDE
-.vs/
-.vscode/
 .idea/
+.vscode/
 *.user
-*.user.os
-*.suo
+*.pro.user*
+CMakeUserPresets.json
 
-# Qt / ElaWidgetTools (预编译库太大，不提交)
-lib/ElaWidgetTools/lib/
-lib/ElaWidgetTools/bin/
+# Compiled
+*.exe
+*.dll
+*.a
+*.lib
+*.obj
+*.o
 
-# 日志
+# Qt Creator
+*.autosave
+
+# Logs
 daily_log/
 *.log
 
-# Claude Code 本地设置
-.claude/
-
-# 运行时数据
-.azur/data/
-
-# 项目缓存
-.azur/project_index.json
-
-# 临时文件
-files.txt
-nul
+# OS
+Thumbs.db
+.DS_Store

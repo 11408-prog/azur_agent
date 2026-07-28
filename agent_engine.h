@@ -29,8 +29,18 @@ public:
     void cancel();
     bool isRunning() const { return isRunning_; }
 
+    // 引擎当前是否"占用中"（正在请求/流式生成，或者正等待用户确认写操作）。
+    // Chat 模式和 Project 模式共用同一个 AgentEngine 实例，任何一方在发起新请求前
+    // 都应该先检查这个状态，避免在对方请求还没结束时把它悄悄 cancel 掉。
+    bool isBusy() const { return isRunning_ || waitingConfirm_; }
+
     void setAllowedPaths(const QStringList &paths);
     void setMaxToolRounds(int rounds) { maxToolRounds_ = rounds; }
+
+    // 对应设置页"Agent 权限"选项：true = 自动执行写操作/命令，不弹确认框；
+    // false（默认）= 每次都需要用户在弹窗里确认。调用方应在 start() 之前设置好。
+    void setAutoExecute(bool autoExecute) { autoExecute_ = autoExecute; }
+    bool autoExecute() const { return autoExecute_; }
 
     // 获取引擎内部累积的完整消息历史（含 assistant / tool 消息）
     QList<QJsonObject> messageHistory() const { return messageHistory_; }
@@ -84,6 +94,7 @@ private:
     // 运行时状态
     bool isRunning_ = false;
     bool waitingConfirm_ = false;
+    bool autoExecute_ = false;
     int toolRound_ = 0;
     int maxToolRounds_ = 200; // 足够高避免正常任务被截断，出错时仍可防无限循环
 

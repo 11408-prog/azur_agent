@@ -49,6 +49,15 @@ private:
                                  const QString &relPath);
     static QString runCommand(const QString &workspaceRoot, const QJsonObject &args, bool *ok, QString *displayLabel);
 
+    // 把 apply_patch 的"逐条 search/replace"应用逻辑抽成公共函数，
+    // 供 applyPatch()（真正执行）和 previewDiff()（确认弹窗预览）共用，
+    // 避免两处各写一份、逻辑跑偏导致"预览看到的"和"实际发生的"不一致。
+    // 成功返回 true 并把结果写入 *outContent；*resultsOut 记录每条 patch 的执行说明（成功/模糊匹配/失败原因）。
+    // 任意一条 patch 匹配失败（找不到或有歧义）都会导致整体失败（返回 false），不做部分应用。
+    static bool applyPatchesToContent(const QString &originalContent, const QJsonArray &patches,
+                                       QString *outContent, QStringList *resultsOut,
+                                       QString *failureMessage);
+
     static QStringList s_allowedPaths;
 };
 

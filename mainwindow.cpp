@@ -70,25 +70,29 @@
 #include "tool_executor.h"
 #include "projectsession.h"
 #include "projectpage.h"
+#include "modemanager.h"
+
+// 从可执行文件位置回溯到项目根目录，构建资源路径
+static QString projectRoot()
+{
+    QString appDir = QCoreApplication::applicationDirPath();
+    return QDir::cleanPath(appDir + "/../..");
+}
 
 MainWindow::MainWindow(QWidget *parent)
     : ElaWindow(parent)
     , chatPage_(nullptr)
-    , chatHistoryPage_(nullptr)
     , settingPage_(nullptr)
     , aboutPage_(nullptr)
     , client_(new DeepSeekClient(this))
     , isWaitingResponse_(false)
-    , projectPage_(nullptr)
     , projectPageWidget_(nullptr)
-    , currentProject_(nullptr)
     , chatEngine_(nullptr)
     , chatPageWidget_(nullptr)
     , settingsPageWidget_(nullptr)
     , sidebarToggleBtn_(nullptr)
     , openFolderBtn_(nullptr)
     , projectHistoryBtn_(nullptr)
-    , projectConvService_(nullptr)
 {
     qDebug()<<"[MAINWIN] 构造 MainWindow";
     setWindowTitle("Azur Agent");
@@ -106,7 +110,9 @@ MainWindow::MainWindow(QWidget *parent)
         "}"
     );
 
-    // 初始化聊天会话管理器（存聊天模式对话）
+    // ==================== 初始化数据层 ====================
+
+    // 聊天会话管理器（存聊天模式对话）
     conversationManager_ = new ConversationManager(this);
     if (!conversationManager_->initialize()) {
         QMessageBox::warning(nullptr, "错误", "无法初始化会话存储目录");
@@ -119,26 +125,21 @@ MainWindow::MainWindow(QWidget *parent)
         }
     });
 
-    // 初始化共享项目会话管理器（存项目模式对话，所有项目共用）
+    // 项目会话管理器（所有项目共用）
     QString appData = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
     QString projectDataDir = appData + "/AzurAgent/data/project_chats";
     projectConvMgr_ = new ConversationManager(this);
     if (!projectConvMgr_->initialize(projectDataDir)) {
         qWarning() << "Failed to initialize project conversation manager";
     }
-    connect(projectConvMgr_, &ConversationManager::conversationListChanged,
-            this, [this]() {
-        // 项目对话列表已变更，无需额外操作
-    });
 
-    // 初始化项目对话服务层
+    // 项目对话服务层
     projectConvService_ = new ProjectConversationService(
         projectConvMgr_, conversationManager_, this);
-
-    // 一次性迁移旧项目对话
     projectConvService_->migrateOldConversations();
 
-    // ---- 创建解耦组件 ----
+    // ==================== 创建 UI 组件 ====================
+
     chatPageWidget_ = new ChatPageWidget(this);
     settingsPageWidget_ = new SettingPageWidget(this);
 
@@ -157,6 +158,9 @@ MainWindow::MainWindow(QWidget *parent)
         if (chatEngine_) {
             chatEngine_->cancel();
             chatPageWidget_->setInputEnabled(true);
+            // 之前这里遗漏了重置 isWaitingResponse_，导致取消一次之后
+            // onSendClicked 里的 "if (isWaitingResponse_) return;" 会一直挡住后续发送。
+            isWaitingResponse_ = false;
         }
     });
     connect(chatPageWidget_, &ChatPageWidget::clearHistoryClicked, this, [this]() {
@@ -197,7 +201,8 @@ MainWindow::MainWindow(QWidget *parent)
         client_->testConnection(apiKey, baseUrl);
     });
 
-    // ---- 连接 DeepSeek 客户端（通过 AgentEngine） ----
+    // ==================== 创建 AgentEngine ====================
+
     chatEngine_ = new AgentEngine(client_, this);
     connect(chatEngine_, &AgentEngine::chunkReceived,
             this, &MainWindow::onApiChunkReceived);
@@ -207,6 +212,8 @@ MainWindow::MainWindow(QWidget *parent)
             this, &MainWindow::onApiError);
     connect(chatEngine_, &AgentEngine::stepChanged,
             this, [this](const QString &text) { chatPageWidget_->updateAiStep(text); });
+
+    // ---- 写操作确认弹窗（Chat 模式） ----
     connect(chatEngine_, &AgentEngine::writeConfirmationRequired, this, [this](const QStringList &diffList) {
         ElaContentDialog dlg(this);
         dlg.setWindowTitle("修改确认");
@@ -241,7 +248,6 @@ MainWindow::MainWindow(QWidget *parent)
         connect(&dlg, &ElaContentDialog::leftButtonClicked, &dlg, &QDialog::reject);
         connect(&dlg, &ElaContentDialog::rightButtonClicked, &dlg, &QDialog::accept);
 
-        // Enter 键接受修改，Escape 键拒绝
         QShortcut *enterShortcut = new QShortcut(QKeySequence(Qt::Key_Return), &dlg);
         QShortcut *enterShortcut2 = new QShortcut(QKeySequence(Qt::Key_Enter), &dlg);
         connect(enterShortcut, &QShortcut::activated, &dlg, &QDialog::accept);
@@ -251,7 +257,7 @@ MainWindow::MainWindow(QWidget *parent)
         chatEngine_->confirmWrite(accepted);
     });
 
-    // 连接测试结果
+    // ---- 连接测试结果 ----
     connect(client_, &DeepSeekClient::connectionTested, this,
             [this](bool success, const QString &message) {
         if (success) {
@@ -261,10 +267,31 @@ MainWindow::MainWindow(QWidget *parent)
         }
     });
 
-    // 加载聊天背景图
+    // ==================== 创建 ModeManager ====================
+
+    modeManager_ = new ModeManager(this);
+    modeManager_->setConversationService(projectConvService_);
+
+    // ModeManager 信号 → UI 更新
+    connect(modeManager_, &ModeManager::modeChanged, this, &MainWindow::updateAppBarForMode);
+
+    // ==================== 构建 UI 导航 ====================
+
+    setupNavigation();
+    systemPrompt_ = buildSystemPrompt();
+    if (systemPrompt_.isEmpty()) {
+        qWarning() << "systemPrompt_ 为空：未能从 prompt 文件读取到内容，"
+                      "请确认 app.qrc 引用的资源文件存在。";
+    }
+
+    // 设置 ModeManager 的 projectPageWidget (需在 setupNavigation 之后)
+    modeManager_->setProjectPageWidget(projectPageWidget_);
+
+    // ==================== 加载背景图（使用 QRC） ====================
+
     {
-        static const QString kBgPath = QStringLiteral("C:/Users/ASUS/Desktop/practice/agent_/avatar/bg.png");
-        QPixmap bgPixmap(kBgPath);
+        QString bgPath = projectRoot() + "/avatar/bg.png";
+        QPixmap bgPixmap(bgPath);
         if (!bgPixmap.isNull()) {
             chatPageWidget_->setBackgroundPixmap(bgPixmap);
             QSettings s("AzurStudio", "AzurAgent");
@@ -272,15 +299,8 @@ MainWindow::MainWindow(QWidget *parent)
         }
     }
 
-    // 构建 UI 导航
-    setupNavigation();
-    systemPrompt_ = buildSystemPrompt();
-    if (systemPrompt_.isEmpty()) {
-        qWarning() << "systemPrompt_ 为空：未能从 core_agent.md 等 prompt 文件读取到内容，"
-                      "请确认 app.qrc 引用的资源文件存在。";
-    }
+    // ==================== 加载设置 & 启动对话 ====================
 
-    // 加载设置
     loadSettings();
 
     // 启动时默认打开一个新对话
@@ -304,37 +324,46 @@ MainWindow::MainWindow(QWidget *parent)
 
     chatPageWidget_->refreshConversationList(
         conversationManager_->conversationsMeta(), currentConversationId_);
+
+    // ==================== 模式切换后刷新侧边栏按钮状态 ====================
+
     connect(chatPageWidget_, &ChatPageWidget::sidebarCollapsedChanged,
             this, &MainWindow::updateToggleButtonState);
     connect(projectPageWidget_, &ProjectPage::leftPanelCollapsedChanged,
             this, &MainWindow::updateToggleButtonState);
 
     connect(sidebarToggleBtn_, &ElaIconButton::clicked, this, [this]() {
-        if (currentMode_ == AgentMode::Project && projectPageWidget_) {
-            projectPageWidget_->togglePanel(true);   // 控制项目文件树
+        if (modeManager_->currentMode() == ModeManager::AgentMode::Project && projectPageWidget_) {
+            projectPageWidget_->togglePanel(true);
         } else {
-            chatPageWidget_->toggleSidebar();        // 控制聊天历史侧边栏
+            chatPageWidget_->toggleSidebar();
         }
     });
 
-    // 项目对话更新时自动持久化
+    // ==================== 项目对话持久化 ====================
+
     connect(projectPageWidget_, &ProjectPage::conversationUpdated,
-            this, [this](const QList<QJsonObject> &messages) {
-        if (currentMode_ != AgentMode::Project) return;
-        QJsonArray arr;
-        for (const auto &msg : qAsConst(messages)) arr.append(msg);
-        QString projectPath = currentProject_ ? currentProject_->projectPath : QString();
-        projectConvService_->saveConversation(currentConversationId_, arr, projectPath);
+            this, [this](const QList<QJsonObject> &) {
+        modeManager_->saveConversation();
     });
 
-    // 项目对话标题更新时持久化（基于第一条用户消息自动命名）
     connect(projectPageWidget_, &ProjectPage::titleChanged,
-            this, [this](const QString &title) {
-        if (currentMode_ != AgentMode::Project) return;
-        projectConvService_->renameConversation(currentConversationId_, title);
-        saveCurrentProjectEntry();
+            this, [this](const QString &) {
+        modeManager_->saveEntry();
     });
 
+    updateToggleButtonState();
+    updateAppBarForMode(ModeManager::AgentMode::Chat);
+}
+
+// ==================== AppBar 按钮状态 ====================
+
+void MainWindow::updateAppBarForMode(ModeManager::AgentMode mode)
+{
+    const bool isProject = (mode == ModeManager::AgentMode::Project);
+    if (openFolderBtn_) openFolderBtn_->setVisible(isProject);
+    if (projectHistoryBtn_) projectHistoryBtn_->setVisible(isProject);
+    if (projectConvListBtn_) projectConvListBtn_->setVisible(isProject);
     updateToggleButtonState();
 }
 
@@ -342,7 +371,7 @@ void MainWindow::updateToggleButtonState()
 {
     if (!sidebarToggleBtn_) return;
 
-    if (currentMode_ == AgentMode::Project && projectPageWidget_) {
+    if (modeManager_->currentMode() == ModeManager::AgentMode::Project && projectPageWidget_) {
         bool collapsed = projectPageWidget_->isLeftPanelCollapsed();
         sidebarToggleBtn_->setAwesome(collapsed ? ElaIconType::Sidebar : ElaIconType::SidebarFlip);
         sidebarToggleBtn_->setToolTip(collapsed ? "显示项目文件" : "隐藏项目文件");
@@ -354,13 +383,14 @@ void MainWindow::updateToggleButtonState()
 }
 
 // ==================== 导航设置 ====================
+
 void MainWindow::setupNavigation()
 {
     qDebug()<<"[MAINWIN] setupNavigation 开始";
 
     setUserInfoCardTitle("Azur Agent");
     setUserInfoCardSubTitle("Enterprise");
-    const QPixmap avatarPixmap("C:/Users/ASUS/Desktop/practice/agent_/avatar/enterprise3.png");
+    const QPixmap avatarPixmap(projectRoot() + "/avatar/enterprise3.png");
     if (!avatarPixmap.isNull()) {
         setUserInfoCardPixmap(avatarPixmap);
     } else {
@@ -385,7 +415,7 @@ void MainWindow::setupNavigation()
     aboutPage_->setTitleVisible(false);
     setupAboutPage();
 
-    // AppBar 侧边栏折叠按钮
+    // ========== AppBar 按钮 ==========
     QWidget *appBarActions = new QWidget(this);
     appBarActions->setFixedHeight(32);
     appBarActions->setStyleSheet("background: transparent;");
@@ -395,44 +425,23 @@ void MainWindow::setupNavigation()
 
     sidebarToggleBtn_ = new ElaIconButton(ElaIconType::SidebarFlip, 16, 30, 30, appBarActions);
     sidebarToggleBtn_->setToolTip("隐藏历史记录");
-    // 注意：sidebarToggleBtn_->clicked 的连接在构造函数中已完成
-    //（包含 Project 和 Chat 模式的分支处理），此处不再重复连接
     connect(chatPageWidget_, &ChatPageWidget::sidebarCollapsedChanged, this, [this](bool collapsed) {
         sidebarToggleBtn_->setAwesome(collapsed ? ElaIconType::Sidebar : ElaIconType::SidebarFlip);
         sidebarToggleBtn_->setToolTip(collapsed ? "显示历史记录" : "隐藏历史记录");
     });
+
     openFolderBtn_ = new ElaIconButton(ElaIconType::FolderOpen, 16, 30, 30, appBarActions);
     openFolderBtn_->setToolTip("打开项目文件夹");
     openFolderBtn_->setVisible(false);
     connect(openFolderBtn_, &ElaIconButton::clicked, this, [this]() {
-        // 保存当前项目关联的对话
-        saveProjectConversation();
-        saveCurrentProjectEntry();
+        modeManager_->saveConversation();
+        modeManager_->saveEntry();
 
         const QString dir = QFileDialog::getExistingDirectory(this, "选择项目目录");
         if (!dir.isEmpty()) {
             QSettings s("AzurStudio", "AzurAgent");
             s.setValue("lastProjectPath", dir);
-
-            // 共享项目管理器已有初始化好的 projectConvMgr_
-
-            // 在项目管理器中创建新对话
-            currentConversationId_ = projectConvService_->createConversation(dir);
-
-            currentProject_ = new ProjectSession(ProjectSession::load(dir));
-            if (!currentProject_->isValid()) {
-                delete currentProject_;
-                currentProject_ = new ProjectSession();
-                currentProject_->projectPath = dir;
-                currentProject_->save();
-            }
-            projectPageWidget_->setProjectPath(currentProject_->projectPath);
-            ToolExecutor::setAllowedPaths(currentProject_->allowedPaths);
-            chatEngine_->setAllowedPaths(currentProject_->allowedPaths);
-
-            // 清空项目对话并保存关联
-            projectPageWidget_->restoreConversation({});
-            saveCurrentProjectEntry();
+            modeManager_->openProject(dir);
         }
     });
 
@@ -443,7 +452,7 @@ void MainWindow::setupNavigation()
         ProjectHistoryDialog dlg(this);
         connect(&dlg, &ProjectHistoryDialog::projectSelected,
                 this, [this](const QString &path, const QString &convId) {
-            switchToProjectEntry(path, convId);
+            modeManager_->switchToEntry(path, convId);
         });
         dlg.exec();
     });
@@ -452,22 +461,24 @@ void MainWindow::setupNavigation()
     projectConvListBtn_->setToolTip("当前项目对话列表");
     projectConvListBtn_->setVisible(false);
     connect(projectConvListBtn_, &ElaIconButton::clicked, this, [this]() {
-        if (!currentProject_ || currentProject_->projectPath.isEmpty()) return;
+        ProjectSession *proj = modeManager_->currentProject();
+        if (!proj || proj->projectPath.isEmpty()) return;
         ProjectConvDialog dlg(projectConvMgr_,
-                               currentProject_->projectPath,
-                               currentConversationId_, this);
+                               proj->projectPath,
+                               modeManager_->currentConversationId(), this);
         connect(&dlg, &ProjectConvDialog::conversationSelected,
-                this, &MainWindow::switchToProjectConversation);
+                this, [this](const QString &convId) {
+            modeManager_->switchToConversation(convId);
+        });
         connect(&dlg, &ProjectConvDialog::newConversationRequested,
                 this, [this]() {
-            if (!currentProject_ || currentProject_->projectPath.isEmpty()) return;
-            // 保存当前对话
-            saveProjectConversation();
-            // 创建新对话并绑定到当前项目
-            currentConversationId_ = projectConvService_->createConversation(
-                currentProject_->projectPath);
+            ProjectSession *proj = modeManager_->currentProject();
+            if (!proj || proj->projectPath.isEmpty()) return;
+            modeManager_->saveConversation();
+            const QString newId = projectConvService_->createConversation(proj->projectPath);
+            modeManager_->setConversationId(newId);
             projectPageWidget_->restoreConversation({});
-            saveCurrentProjectEntry();
+            modeManager_->saveEntry();
         });
         dlg.exec();
     });
@@ -496,6 +507,7 @@ void MainWindow::setupNavigation()
 }
 
 // ==================== 关于页面 ====================
+
 void MainWindow::setupAboutPage()
 {
     QWidget *aboutContent = new QWidget();
@@ -503,7 +515,7 @@ void MainWindow::setupAboutPage()
     aboutLayout->setContentsMargins(30, 30, 30, 30);
     aboutLayout->setSpacing(20);
     aboutLayout->setAlignment(Qt::AlignCenter);
-    //标题
+
     ElaText *appName = new ElaText("Azur Agent", aboutContent);
     appName->setTextPixelSize(28);
     QFont boldFont = appName->font();
@@ -552,6 +564,7 @@ void MainWindow::setupAboutPage()
 }
 
 // ==================== 发送消息 ====================
+
 void MainWindow::onSendClicked()
 {
     qDebug()<<"[MAINWIN] onSendClicked | isWaitingResponse_="<<isWaitingResponse_;
@@ -578,6 +591,23 @@ void MainWindow::onSendClicked()
         return;
     }
 
+    // chatEngine_ 是 Chat 模式和 Project 模式共用的同一个实例：如果此刻并不是
+    // Chat 自己在等回复（isWaitingResponse_ 为 false），但引擎却处于占用状态，
+    // 说明 Project 模式正有一个请求在跑。这时如果照常调用 start()，
+    // AgentEngine::start() 内部会先 cancel() 掉 Project 那边的请求且不发出任何
+    // 信号通知，导致 Project 页面的输入框永久卡在"等待中"。这里直接拦下并提示用户。
+    if (!isWaitingResponse_ && chatEngine_->isBusy()) {
+        ElaMessageBar::warning(ElaMessageBarType::TopRight, "提示",
+                               "项目模式正有请求在处理中，请稍后再发送，或先在项目页取消", 3000);
+        return;
+    }
+
+    // 同步"Agent 权限"设置（每次确认 / 自动执行）到引擎
+    {
+        QSettings s("AzurStudio", "AzurAgent");
+        chatEngine_->setAutoExecute(s.value("agentPermission", 0).toInt() == 1);
+    }
+
     chatPageWidget_->appendMessage(text, true);
     lastUserMessage_ = text;
 
@@ -596,26 +626,23 @@ void MainWindow::onSendClicked()
     isWaitingResponse_ = true;
 }
 
-// ==================== DeepSeek API 回调 ====================
+// ==================== AI 回调 ====================
+
 void MainWindow::onApiChunkReceived(const QString &delta)
 {
-    if (currentMode_ != AgentMode::Chat) return;
+    if (modeManager_->currentMode() != ModeManager::AgentMode::Chat) return;
     chatPageWidget_->onChunkReceived(delta);
 }
 
 void MainWindow::onApiResponseCompleted(const QString &fullText)
 {
-    // 仅处理聊天模式下的完成回调，项目模式由 ProjectPage 自行处理
-    if (currentMode_ != AgentMode::Chat) return;
+    if (modeManager_->currentMode() != ModeManager::AgentMode::Chat) return;
 
     qDebug()<<"[MAINWIN] onApiResponseCompleted | 文本长度="<<fullText.length();
 
-    // UI 更新委托给 ChatPageWidget
     chatPageWidget_->onResponseCompleted(fullText);
 
-    // 业务逻辑：记住模型、同步历史、持久化
     settingsPageWidget_->rememberModel(settingsPageWidget_->modelName());
-
     messageHistory_ = chatEngine_->messageHistory();
 
     // 自动生成标题
@@ -629,7 +656,6 @@ void MainWindow::onApiResponseCompleted(const QString &fullText)
         if (lastUserMessage_.length() > 30) title += "...";
     }
 
-    // 保存到文件
     QJsonArray messagesArray;
     for (const QJsonObject &msg : qAsConst(messageHistory_)) {
         messagesArray.append(msg);
@@ -638,24 +664,23 @@ void MainWindow::onApiResponseCompleted(const QString &fullText)
 
     chatPageWidget_->refreshConversationList(
         conversationManager_->conversationsMeta(), currentConversationId_);
-
     chatPageWidget_->setInputEnabled(true);
     isWaitingResponse_ = false;
 }
 
 void MainWindow::onApiError(const QString &errorMessage)
 {
-    if (currentMode_ != AgentMode::Chat) return;
+    if (modeManager_->currentMode() != ModeManager::AgentMode::Chat) return;
     qDebug()<<"[MAINWIN] onApiError | errorMessage="<<errorMessage;
 
     chatPageWidget_->onResponseError(errorMessage);
     ElaMessageBar::error(ElaMessageBarType::TopRight, "请求失败", errorMessage, 5000);
-
     chatPageWidget_->setInputEnabled(true);
     isWaitingResponse_ = false;
 }
 
 // ==================== 会话管理 ====================
+
 void MainWindow::loadConversation(const QString &id)
 {
     if (id.isEmpty()) return;
@@ -701,184 +726,22 @@ void MainWindow::onNewConversation()
         conversationManager_->conversationsMeta(), currentConversationId_);
 }
 
-// ==================== 双模式切换 ====================
-void MainWindow::enterProjectMode()
-{
-    qDebug()<<"[MAINWIN] enterProjectMode | 当前模式="<<(currentMode_==AgentMode::Chat?"Chat":"Project");
-    if (currentMode_ == AgentMode::Project) return;
-    currentMode_ = AgentMode::Project;
-
-    chatEngine_->cancel();
-    chatPageWidget_->clearAiState();
-    isWaitingResponse_ = false;
-
-    if (!currentProject_ || currentProject_->projectPath.isEmpty()) {
-        QSettings s("AzurStudio", "AzurAgent");
-        QString lastProject = s.value("lastProjectPath").toString();
-
-        const QString dirPath = QFileDialog::getExistingDirectory(this,
-            "选择项目目录", lastProject.isEmpty() ? QDir::homePath() : lastProject);
-        if (dirPath.isEmpty()) {
-            currentMode_ = AgentMode::Chat;
-            return;
-        }
-
-        currentProject_ = new ProjectSession(ProjectSession::load(dirPath));
-        if (!currentProject_->isValid()) {
-            delete currentProject_;
-            currentProject_ = new ProjectSession();
-            currentProject_->projectPath = dirPath;
-            currentProject_->save();
-        }
-        s.setValue("lastProjectPath", dirPath);
-    }
-
-    // 延迟执行重任务（索引重建等），让 UI 先完成导航动画
-    QTimer::singleShot(0, this, &MainWindow::finishProjectInit);
-}
-
-void MainWindow::finishProjectInit()
-{
-    if (!currentProject_) return;
-
-    // 使用服务层解析/创建项目对话
-    const QString projPath = QDir::toNativeSeparators(QDir::cleanPath(currentProject_->projectPath));
-    const QString prevConvId = ProjectConversationService::findEntryConversationId(projPath);
-    currentConversationId_ = projectConvService_->resolveConversation(projPath, prevConvId);
-
-    // 加载对话消息
-    QJsonArray prevMessages = projectConvService_->loadConversation(currentConversationId_);
-    QList<QJsonObject> msgList;
-    for (const QJsonValue &v : prevMessages) msgList.append(v.toObject());
-    projectPageWidget_->restoreConversation(msgList);
-
-    projectPageWidget_->loadSystemPrompt();
-    ToolExecutor::setAllowedPaths(currentProject_->allowedPaths);
-    chatEngine_->setAllowedPaths(currentProject_->allowedPaths);
-    projectPageWidget_->setActive(true);
-    if (projectPageWidget_) {
-        projectPageWidget_->hideLeftToggleButton();
-    }
-    if (openFolderBtn_) {
-        openFolderBtn_->setVisible(true);
-    }
-    if (projectHistoryBtn_) {
-        projectHistoryBtn_->setVisible(true);
-    }
-    if (projectConvListBtn_) {
-        projectConvListBtn_->setVisible(true);
-    }
-    // 保存当前 chat 会话关联到此项目
-    saveCurrentProjectEntry();
-    updateToggleButtonState();
-
-    // 延迟执行项目索引重建，让 UI 先完成所有更新
-    QTimer::singleShot(0, this, [this]() {
-        if (currentProject_ && !currentProject_->projectPath.isEmpty()) {
-            projectPageWidget_->setProjectPath(currentProject_->projectPath);
-        }
-    });
-}
-
-void MainWindow::enterChatMode()
-{
-    qDebug()<<"[MAINWIN] enterChatMode | 当前模式="<<(currentMode_==AgentMode::Chat?"Chat":"Project");
-    if (currentMode_ == AgentMode::Chat) return;
-    currentMode_ = AgentMode::Chat;
-
-    chatEngine_->cancel();
-    projectPageWidget_->setActive(false);
-    ToolExecutor::setAllowedPaths({});
-    chatEngine_->setAllowedPaths({});
-
-    if (sidebarToggleBtn_) {
-        sidebarToggleBtn_->setVisible(true);
-    }
-    if (openFolderBtn_) {
-        openFolderBtn_->setVisible(false);
-    }
-    if (projectHistoryBtn_) {
-        projectHistoryBtn_->setVisible(false);
-    }
-    if (projectConvListBtn_) {
-        projectConvListBtn_->setVisible(false);
-    }
-    updateToggleButtonState();
-
-    // 刷新聊天侧栏，反映迁移后已清理的对话列表
-    chatPageWidget_->refreshConversationList(
-        conversationManager_->conversationsMeta(), currentConversationId_);
-
-    // 如果当前会话 ID 属于项目对话（不在全局管理器中），则切换到最近的聊天对话
-    bool isChatConv = false;
-    const QJsonArray chatMeta = conversationManager_->conversationsMeta();
-    for (const QJsonValue &v : chatMeta) {
-        if (v.toObject()["id"].toString() == currentConversationId_) {
-            isChatConv = true;
-            break;
-        }
-    }
-    if (!isChatConv) {
-        if (!chatMeta.isEmpty()) {
-            loadConversation(chatMeta.first().toObject()["id"].toString());
-        } else {
-            onNewConversation();
-        }
-    }
-}
-
-// ==================== 设置持久化 ====================
-void MainWindow::saveSettings()
-{
-    qDebug()<<"[MAINWIN] saveSettings";
-    settingsPageWidget_->saveSettings();
-    QSettings settings("AzurStudio", "AzurAgent");
-    settings.setValue("sidebarCollapsed", false); // ChatPageWidget 内部管理侧边栏状态
-}
-
-void MainWindow::loadSettings()
-{
-    qDebug()<<"[MAINWIN] loadSettings";
-    settingsPageWidget_->loadSettings();
-    // 侧边栏状态由 ChatPageWidget 内部管理
-    chatPageWidget_->restoreSidebarState(false);
-}
-
-// ==================== Prompt 构建 ====================
-QString MainWindow::loadPromptFile(const QString &filename) const
-{
-    return PromptLoader::loadFile(filename);
-}
-
-QString MainWindow::buildSystemPrompt() const
-{
-    return PromptLoader::buildSystemPrompt();
-}
-
-#if 0
-// 旧版 loadPromptFile / buildSystemPrompt（已迁移到 PromptLoader）
-QString MainWindow::loadPromptFile_OLD(const QString &filename) const { return {}; }
-QString MainWindow::buildSystemPrompt_OLD() const { return {}; }
-#endif
-
 // ==================== 事件过滤 ====================
+
 bool MainWindow::eventFilter(QObject *watched, QEvent *event)
 {
-    // 检测项目页面的显示/隐藏，自动切换模式
     if (watched == projectPageWidget_) {
         if (event->type() == QEvent::Show) {
-            // 延迟执行，让 ElaWindow 的导航动画完成后才弹对话框和做重任务
-            QTimer::singleShot(0, this, &MainWindow::enterProjectMode);
+            QTimer::singleShot(0, this, [this]() { modeManager_->enterProjectMode(this); });
         } else if (event->type() == QEvent::Hide) {
-            projectPageWidget_->setActive(false);
-            enterChatMode();
+            modeManager_->enterChatMode();
         }
     }
-
     return ElaWindow::eventFilter(watched, event);
 }
 
 // ==================== 窗口关闭 ====================
+
 void MainWindow::closeEvent(QCloseEvent *event)
 {
     qDebug()<<"[MAINWIN] closeEvent 窗口关闭";
@@ -891,93 +754,24 @@ MainWindow::~MainWindow()
     qDebug()<<"[MAINWIN] 析构 MainWindow";
 }
 
+// ==================== 设置持久化 ====================
 
-
-// ==================== 已废弃（保留空实现） ====================
-void MainWindow::onSelectWorkspaceClicked()
+void MainWindow::saveSettings()
 {
-    // 此功能已通过 ProjectPage 管理
+    qDebug()<<"[MAINWIN] saveSettings";
+    settingsPageWidget_->saveSettings();
 }
 
-void MainWindow::restoreSidebarState(bool collapsed)
+void MainWindow::loadSettings()
 {
-    chatPageWidget_->restoreSidebarState(collapsed);
+    qDebug()<<"[MAINWIN] loadSettings";
+    settingsPageWidget_->loadSettings();
+    chatPageWidget_->restoreSidebarState(false);
 }
 
-void MainWindow::saveCurrentProjectEntry()
+// ==================== Prompt 构建 ====================
+
+QString MainWindow::buildSystemPrompt() const
 {
-    if (!currentProject_ || currentProject_->projectPath.isEmpty()) return;
-    QString convTitle = projectConvService_->conversationTitle(currentConversationId_);
-    ProjectConversationService::saveProjectEntry(
-        currentProject_->projectPath, currentConversationId_, convTitle);
-}
-
-void MainWindow::saveProjectConversation()
-{
-    if (currentMode_ != AgentMode::Project || !projectPageWidget_) return;
-    const QList<QJsonObject> messages = projectPageWidget_->conversation();
-    if (messages.isEmpty()) return;
-    QJsonArray arr;
-    for (const auto &msg : qAsConst(messages)) arr.append(msg);
-    QString projectPath = currentProject_ ? currentProject_->projectPath : QString();
-    projectConvService_->saveConversation(currentConversationId_, arr, projectPath);
-}
-
-void MainWindow::switchToProjectEntry(const QString &path, const QString &convId)
-{
-    if (!projectPageWidget_) return;
-
-    // 保存当前项目对话
-    saveProjectConversation();
-    saveCurrentProjectEntry();
-
-    const QString cleanPath = QDir::toNativeSeparators(QDir::cleanPath(path));
-
-    // 切换到目标项目
-    currentProject_ = new ProjectSession(ProjectSession::load(cleanPath));
-    if (!currentProject_->isValid()) {
-        delete currentProject_;
-        currentProject_ = new ProjectSession();
-        currentProject_->projectPath = cleanPath;
-        currentProject_->save();
-    }
-
-    // 使用服务层解析对话 ID（自动处理迁移）
-    currentConversationId_ = projectConvService_->resolveConversation(cleanPath, convId);
-
-    // 更新 UI
-    projectPageWidget_->setProjectPath(currentProject_->projectPath);
-    ToolExecutor::setAllowedPaths(currentProject_->allowedPaths);
-    chatEngine_->setAllowedPaths(currentProject_->allowedPaths);
-
-    // 加载历史对话
-    QJsonArray messages = projectConvService_->loadConversation(currentConversationId_);
-    QList<QJsonObject> msgList;
-    for (const QJsonValue &v : messages) {
-        msgList.append(v.toObject());
-    }
-    projectPageWidget_->restoreConversation(msgList);
-
-    // 保存新的关联
-    saveCurrentProjectEntry();
-}
-
-void MainWindow::switchToProjectConversation(const QString &convId)
-{
-    if (!projectPageWidget_) return;
-
-    // 先保存当前对话
-    saveProjectConversation();
-
-    // 切换到目标对话
-    currentConversationId_ = convId;
-    QJsonArray messages = projectConvService_->loadConversation(convId);
-    QList<QJsonObject> msgList;
-    for (const QJsonValue &v : messages) {
-        msgList.append(v.toObject());
-    }
-    projectPageWidget_->restoreConversation(msgList);
-    saveCurrentProjectEntry();
-
-    qDebug() << "[MAINWIN] 切换到项目对话:" << convId;
+    return PromptLoader::buildSystemPrompt();
 }

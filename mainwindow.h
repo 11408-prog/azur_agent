@@ -40,6 +40,7 @@
 #include "ai_client.h"
 #include "conversationmanager.h"
 #include "agent_engine.h"
+#include "modemanager.h"
 
 class ProjectPage;
 class ProjectSession;
@@ -64,84 +65,55 @@ private slots:
     void loadConversation(const QString &id);
 
     void onSendClicked();
-    void onSelectWorkspaceClicked();
-
     void onApiChunkReceived(const QString &delta);
     void onApiResponseCompleted(const QString &fullText);
     void onApiError(const QString &errorMessage);
 
-public:
-    enum class AgentMode { Chat, Project };
-
 private:
-    // 根据当前模式更新按钮图标和tooltip
-    void updateToggleButtonState();
-    // ---- 模式切换 ----
-    void enterProjectMode();
-    void enterChatMode();
-    void finishProjectInit();      // 延迟执行的项目初始化（索引重建等重任务）
-
     // ---- UI 构建 ----
     void setupNavigation();
     void setupAboutPage();
-    void restoreSidebarState(bool collapsed);
-
-    // ---- 设置持久化（仅保留 MainWindow 关注的 key） ----
     void saveSettings();
     void loadSettings();
 
     // ---- Prompt 构建 ----
     QString buildSystemPrompt() const;
-    QString loadPromptFile(const QString &filename) const;
+
+    // ---- AppBar 按钮更新 ----
+    void updateAppBarForMode(ModeManager::AgentMode mode);
+    void updateToggleButtonState();
 
     // ---- 导航页 ----
     ElaScrollPage *chatPage_;
-    ElaScrollPage *chatHistoryPage_;
     ElaScrollPage *settingPage_;
     ElaScrollPage *aboutPage_;
+    ElaScrollPage *projectPage_;
 
-    // ---- 业务成员（保留） ----
-    QString historyFilePath_;
-    QJsonArray historyEntries_;
-    QString lastUserMessage_;
+    // ---- 核心组件 ----
     DeepSeekClient *client_;
-    QList<QJsonObject> messageHistory_;
-    bool isWaitingResponse_;
-
-    ConversationManager *conversationManager_;
-    ConversationManager *projectConvMgr_; // 项目模式专用的会话管理器（共享实例）
-    ProjectConversationService *projectConvService_; // 项目对话服务层
-    QString currentConversationId_;
-    QString systemPrompt_;
-
-    // Agent引擎
     AgentEngine *chatEngine_;
+    ConversationManager *conversationManager_;
+    ConversationManager *projectConvMgr_;
+    ProjectConversationService *projectConvService_;
+    ModeManager *modeManager_;
 
-    // ---- 新解耦组件 ----
+    // ---- UI 组件 ----
     ChatPageWidget *chatPageWidget_;
     SettingPageWidget *settingsPageWidget_;
+    ProjectPage *projectPageWidget_;
 
     // ---- AppBar 按钮 ----
     ElaIconButton *sidebarToggleBtn_;
     ElaIconButton *openFolderBtn_;
     ElaIconButton *projectHistoryBtn_;
-    ElaIconButton *projectConvListBtn_;    // 当前项目的对话列表
+    ElaIconButton *projectConvListBtn_;
 
-    // ---- 项目对话管理 ----
-    // 保存当前项目对话到持久化存储
-    void saveProjectConversation();
-    // 保存项目入口到 QSettings 历史记录
-    void saveCurrentProjectEntry();
-    // 切换到目标项目的指定对话
-    void switchToProjectEntry(const QString &path, const QString &convId);
-    // 在当前项目中切换对话
-    void switchToProjectConversation(const QString &convId);
-
-    // ---- 双模式 ----
-    ElaScrollPage *projectPage_;
-    ProjectPage *projectPageWidget_;
-    AgentMode currentMode_ = AgentMode::Chat;
-    ProjectSession *currentProject_ = nullptr;
+    // ---- Chat 模式状态 ----
+    QList<QJsonObject> messageHistory_;
+    QString lastUserMessage_;
+    bool isWaitingResponse_ = false;
+    QString currentConversationId_;
+    QString systemPrompt_;
 };
 
 #endif // MAINWINDOW_H

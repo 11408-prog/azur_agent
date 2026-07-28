@@ -306,7 +306,7 @@ void ChatPageWidget::appendMessage(const QString &text, bool isUser, bool showSt
             bubble->setAiContent(text);
         } else {
             // 无内容：流式占位，显示旋转动画
-            bubble->setAiStreamingContent("⠋");
+            bubble->setAiStreamingContent(QStringLiteral("思考中 ⠋"));
             bubble->startContentSpinner();
         }
     }

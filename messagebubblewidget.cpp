@@ -16,8 +16,28 @@
 #include <QUrl>
 #include <QDateTime>
 #include <QTimer>
+#include <QPixmap>
+#include <QPainter>
+#include <QPainterPath>
 
-QString MessageBubbleWidget::s_avatarDir = QStringLiteral("C:/Users/ASUS/Desktop/practice/agent_/avatar/");
+#include <QCoreApplication>
+#include <QDir>
+
+static QString resolveAvatarDir()
+{
+    // 从 exe 目录开始，逐级向上查找 avatar/ 目录
+    QDir dir(QCoreApplication::applicationDirPath());
+    while (!dir.exists() || !dir.exists("avatar/bot.png")) {
+        if (!dir.cdUp()) break;
+    }
+    if (dir.exists("avatar/bot.png")) {
+        return QDir::cleanPath(dir.absolutePath() + "/avatar");
+    }
+    // fallback: 相对于 exe 目录
+    return QCoreApplication::applicationDirPath() + "/avatar";
+}
+
+QString MessageBubbleWidget::s_avatarDir;
 
 MessageBubbleWidget::MessageBubbleWidget(bool isUser, QWidget *parent)
     : QWidget(parent)
@@ -116,22 +136,43 @@ void MessageBubbleWidget::initUI()
 QLabel *MessageBubbleWidget::createAvatar()
 {
     QLabel *avatar = new QLabel(this);
-    avatar->setFixedSize(36, 36);
+    avatar->setFixedSize(44, 44);
     avatar->setAlignment(Qt::AlignCenter);
 
-    const QString avatarFile = s_avatarDir + (isUser_ ? "user.png" : "bot.png");
-    if (QFile::exists(avatarFile)) {
-        avatar->setStyleSheet(QStringLiteral(
-            "QLabel {"
-            "  border-image: url(%1) 0 0 0 0 stretch stretch;"
-            "  border-radius: 18px;"
-            "}"
-        ).arg(avatarFile));
+    // 运行时惰性解析头像目录（避免静态初始化时 QCoreApplication 未创建）
+    if (s_avatarDir.isEmpty()) {
+        s_avatarDir = resolveAvatarDir();
+    }
+    const QString avatarFile = s_avatarDir + "/" + (isUser_ ? "user.png" : "bot.png");
+    qDebug() << "[Avatar] trying:" << avatarFile << "exists:" << QFile::exists(avatarFile)
+             << "appDir:" << QCoreApplication::applicationDirPath();
+    QPixmap pix(avatarFile);
+    if (!pix.isNull()) {
+        // 2x 渲染保证 HiDPI 清晰度
+        static constexpr int kAvatarSize = 44;
+        static constexpr int kRenderScale = 2;
+        int renderSize = kAvatarSize * kRenderScale;
+
+        QPixmap rounded(renderSize, renderSize);
+        rounded.fill(Qt::transparent);
+
+        QPainter painter(&rounded);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setRenderHint(QPainter::SmoothPixmapTransform);
+        QPainterPath path;
+        path.addEllipse(0, 0, renderSize, renderSize);
+        painter.setClipPath(path);
+        painter.drawPixmap(0, 0, renderSize, renderSize,
+                           pix.scaled(renderSize, renderSize,
+                                      Qt::KeepAspectRatio, Qt::SmoothTransformation));
+        painter.end();
+        rounded.setDevicePixelRatio(kRenderScale);
+        avatar->setPixmap(rounded);
     } else {
         avatar->setText(isUser_ ? "U" : "E");
         avatar->setStyleSheet(QStringLiteral(
             "background-color: %1; color: white;"
-            "border-radius: 18px; font-weight: bold; font-size: 15px;"
+            "border-radius: 22px; font-weight: bold; font-size: 17px;"
         ).arg(isUser_ ? "#4a9eff" : "#7c4dff"));
     }
     return avatar;
@@ -201,7 +242,7 @@ void MessageBubbleWidget::startContentSpinner()
         connect(contentSpinnerTimer_, &QTimer::timeout, this, [this]() {
             static const QStringList frames = {"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"};
             contentSpinnerFrame_++;
-            contentBrowser_->setPlainText(frames[contentSpinnerFrame_ % frames.size()]);
+            contentBrowser_->setPlainText(QStringLiteral("思考中 %1").arg(frames[contentSpinnerFrame_ % frames.size()]));
             MarkdownRenderer::adjustTextBrowserHeight(contentBrowser_);
         });
     }
