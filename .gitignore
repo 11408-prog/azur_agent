@@ -20,6 +20,10 @@ CMakeUserPresets.json
 # Qt Creator
 *.autosave
 
+# App runtime data
+.azur/
+.claude/
+
 # Logs
 daily_log/
 *.log
