@@ -111,6 +111,7 @@ private:
     QVBoxLayout *messageLayout_;
     ElaPlainTextEdit *inputEdit_;
     ElaIconButton *sendButton_;
+    ElaIconButton *stopButton_;
     MessageBubbleWidget *currentAiBubble_ = nullptr;
 
     // Right: AI 活动面板

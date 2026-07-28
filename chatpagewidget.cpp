@@ -235,17 +235,25 @@ void ChatPageWidget::setupUI()
     QHBoxLayout *inputLayout = new QHBoxLayout();
     inputLayout->setSpacing(10);
     inputEdit_ = new ElaPlainTextEdit(chatArea);
-    inputEdit_->setPlaceholderText("输入消息，Ctrl+Enter 发送...");
+    inputEdit_->setPlaceholderText("输入消息，Enter 发送，Shift+Enter 换行...");
     inputEdit_->setFixedHeight(72);
     inputEdit_->installEventFilter(this);
     inputLayout->addWidget(inputEdit_, 1);
 
     sendButton_ = new ElaIconButton(ElaIconType::PaperPlane, 18, 40, 40, chatArea);
-    sendButton_->setToolTip("发送 (Ctrl+Enter)");
+    sendButton_->setToolTip("发送 (Enter)");
     connect(sendButton_, &ElaIconButton::clicked, this, [this]() {
         emit sendClicked(inputEdit_->toPlainText().trimmed());
     });
     inputLayout->addWidget(sendButton_, 0, Qt::AlignBottom);
+
+    stopButton_ = new ElaIconButton(ElaIconType::Ban, 18, 40, 40, chatArea);
+    stopButton_->setToolTip("停止生成");
+    stopButton_->setVisible(false);
+    connect(stopButton_, &ElaIconButton::clicked, this, [this]() {
+        emit cancelRequested();
+    });
+    inputLayout->addWidget(stopButton_, 0, Qt::AlignBottom);
     chatLayout->addLayout(inputLayout);
 
     mainLayout->addWidget(chatArea);
@@ -294,7 +302,12 @@ void ChatPageWidget::appendMessage(const QString &text, bool isUser, bool showSt
         currentAiBuffer_.clear();
 
         if (!text.isEmpty()) {
+            // 有内容：恢复历史或完整回复，直接渲染
             bubble->setAiContent(text);
+        } else {
+            // 无内容：流式占位，显示旋转动画
+            bubble->setAiStreamingContent("⠋");
+            bubble->startContentSpinner();
         }
     }
 
@@ -686,7 +699,9 @@ void ChatPageWidget::finishAiStep(bool success, const QString &finalText)
 void ChatPageWidget::setInputEnabled(bool enabled)
 {
     inputEdit_->setEnabled(enabled);
+    sendButton_->setVisible(enabled);
     sendButton_->setEnabled(enabled);
+    stopButton_->setVisible(!enabled);
     if (enabled) inputEdit_->setFocus();
 }
 
@@ -703,7 +718,7 @@ bool ChatPageWidget::eventFilter(QObject *watched, QEvent *event)
     if (watched == inputEdit_ && event->type() == QEvent::KeyPress) {
         QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
         if ((keyEvent->key() == Qt::Key_Return || keyEvent->key() == Qt::Key_Enter)
-            && (keyEvent->modifiers() & Qt::ControlModifier)) {
+            && !(keyEvent->modifiers() & Qt::ShiftModifier)) {
             emit sendClicked(inputEdit_->toPlainText().trimmed());
             return true;
         }

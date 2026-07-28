@@ -10,6 +10,7 @@ class QVBoxLayout;
 class QTextBrowser;
 class ElaText;
 class ElaScrollPageArea;
+class QTimer;
 
 class MessageBubbleWidget : public QWidget
 {
@@ -33,6 +34,10 @@ public:
     void updateStep(const QString &text);
     void finishStep(bool success, const QString &finalText);
     void spinnerTick(int frame);
+
+    // ---- 内容占位动画（生成前显示的旋转 ⠋） ----
+    void startContentSpinner();
+    void stopContentSpinner();
 
     // ---- 时间戳 ----
     void setTimestamp(const QString &ts);
@@ -60,6 +65,10 @@ private:
     bool stepIndicatorEnabled_ = false;
 
     static QString s_avatarDir;
+
+    // ---- 内容旋转动画 ----
+    QTimer *contentSpinnerTimer_ = nullptr;
+    int contentSpinnerFrame_ = 0;
 
     // ---- 大文本惰性渲染 ----
     static constexpr int kLazyRenderThreshold = 2000;

@@ -15,6 +15,7 @@
 #include <QDesktopServices>
 #include <QUrl>
 #include <QDateTime>
+#include <QTimer>
 
 QString MessageBubbleWidget::s_avatarDir = QStringLiteral("C:/Users/ASUS/Desktop/practice/agent_/avatar/");
 
@@ -50,7 +51,7 @@ void MessageBubbleWidget::initUI()
     bubble_->setBorderRadius(10);
     bubble_->setMinimumHeight(0);
     bubble_->setMaximumHeight(QWIDGETSIZE_MAX);
-    bubble_->setMaximumWidth(420);
+    bubble_->setMaximumWidth(QWIDGETSIZE_MAX);
 
     bubbleLayout_ = new QVBoxLayout(bubble_);
     bubbleLayout_->setContentsMargins(12, 6, 12, 6);
@@ -193,12 +194,38 @@ void MessageBubbleWidget::renderFullContent()
     MarkdownRenderer::adjustTextBrowserHeight(contentBrowser_);
 }
 
+void MessageBubbleWidget::startContentSpinner()
+{
+    if (!contentSpinnerTimer_) {
+        contentSpinnerTimer_ = new QTimer(this);
+        connect(contentSpinnerTimer_, &QTimer::timeout, this, [this]() {
+            static const QStringList frames = {"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"};
+            contentSpinnerFrame_++;
+            contentBrowser_->setPlainText(frames[contentSpinnerFrame_ % frames.size()]);
+            MarkdownRenderer::adjustTextBrowserHeight(contentBrowser_);
+        });
+    }
+    contentSpinnerFrame_ = 0;
+    contentSpinnerTimer_->start(90);
+}
+
+void MessageBubbleWidget::stopContentSpinner()
+{
+    if (contentSpinnerTimer_) contentSpinnerTimer_->stop();
+}
+
 void MessageBubbleWidget::setAiStreamingContent(const QString &plainText)
 {
+    // 收到真正的内容时停止旋转动画
+    if (contentSpinnerTimer_ && contentSpinnerTimer_->isActive()) {
+        contentSpinnerTimer_->stop();
+    }
     userText_->setVisible(false);
     contentBrowser_->setVisible(true);
     contentBrowser_->setPlainText(plainText);
     MarkdownRenderer::adjustTextBrowserHeight(contentBrowser_);
+    // 更新最大宽度限制，确保内容完整可见
+    bubble_->setMaximumWidth(QWIDGETSIZE_MAX);
 }
 
 QTextBrowser *MessageBubbleWidget::aiContentBrowser() const

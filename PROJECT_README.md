@@ -29,6 +29,7 @@ agent_/
 │
 ├── settingpagewidget.h/.cpp        # 设置页面
 ├── conversationmanager.h/.cpp      # 对话管理（创建/保存/加载/删除）
+├── projectconversationservice.h/.cpp # 项目对话服务层（已从 MainWindow 解耦）
 ├── projectconvdialog.h/.cpp        # 项目对话列表对话框
 │
 ├── ai_client.h/.cpp                # AI API 客户端（流式 + Function Calling）
@@ -132,7 +133,7 @@ agent_/
 
 #### `mainwindow.h/.cpp` (917 行)
 
-核心 UI 框架，继承 `ElaWindow`。负责：
+核心 UI 框架，继承 `ElaWindow`。负责 UI 协调和模式切换，项目对话的业务逻辑已委托给 `ProjectConversationService`。
 
 **导航管理：**
 - 4 个页面节点：对话、项目、设置、关于
@@ -153,12 +154,13 @@ agent_/
 **关键依赖：**
 ```
 MainWindow
-├── ChatPageWidget      (聊天页面)
-├── ProjectPage         (项目页面)
-├── SettingPageWidget   (设置页面)
-├── AgentEngine         (AI 引擎，Chat 模式使用)
-├── ConversationManager (对话持久化)
-└── DeepSeekClient      (API 客户端，直接连接测试用)
+├── ChatPageWidget         (聊天页面)
+├── ProjectPage            (项目页面)
+├── SettingPageWidget      (设置页面)
+├── AgentEngine            (AI 引擎，Chat 模式使用)
+├── ConversationManager    (对话持久化)
+├── ProjectConversationService (项目对话服务层)
+└── DeepSeekClient         (API 客户端)
 ```
 
 **数据流（发送消息）：**
@@ -500,6 +502,23 @@ onStepChanged("✗ 文件不存在")     → failLastPending()
 }
 ```
 
+#### `projectconversationservice.h/.cpp`
+
+项目对话管理服务层。从 `MainWindow` 解耦而来，封装了项目对话的保存、加载、切换、迁移等业务逻辑。
+
+**核心方法：**
+| 方法 | 功能 |
+|------|------|
+| `saveConversation(convId, messages, projectPath)` | 保存项目对话到共享存储 |
+| `loadConversation(convId)` | 加载指定对话的消息 |
+| `conversationsForProject(projectPath)` | 获取项目下的对话列表 |
+| `resolveConversation(projectPath, preferredConvId)` | 解析/创建对话（含迁移逻辑） |
+| `saveProjectEntry(projectPath, convId, convTitle)` | 静态方法，写 QSettings 历史 |
+| `findEntryConversationId(projectPath)` | 静态方法，从 QSettings 历史查找 |
+| `migrateOldConversations()` | 一次性迁移旧版项目对话 |
+| `deleteConversation(id)` | 删除对话 |
+| `conversationTitle(convId)` | 获取对话标题 |
+
 #### `promptloader.h/.cpp` (32 行)
 
 构建 system prompt，从 `resources/` 目录依次加载：
@@ -681,7 +700,9 @@ agent_/daily_log/azur_debug_YYYY-MM-DD.log
 MainWindow (ElaWindow)
   ├── owns → DeepSeekClient (1)
   ├── owns → AgentEngine (1, 共享)
-  ├── owns → ConversationManager (1)
+  ├── owns → ConversationManager (2: Chat + Project)
+  ├── owns → ProjectConversationService (1)
+  │     └── uses → ConversationManager (projectConvMgr_)
   ├── owns → ChatPageWidget (1)
   │     └── uses → MessageBubbleWidget (N)
   │           └── uses → MarkdownRenderer (静态)
@@ -693,6 +714,9 @@ MainWindow (ElaWindow)
   │     └── uses → MessageBubbleWidget (N)
   ├── owns → SettingPageWidget (1)
   └── uses → ProjectSession (1)
+
+ProjectConversationService
+  └── uses → ConversationManager (projectConvMgr_, chatConvMgr_)
 
 AgentEngine
   ├── owns → DeepSeekClient (1, 外部传入)

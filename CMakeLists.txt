@@ -1,6 +1,13 @@
 cmake_minimum_required(VERSION 3.19)
 project(agent_ LANGUAGES CXX)
 
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+if(MSVC)
+    add_compile_options(/Zc:__cplusplus)
+endif()
+
 find_package(Qt6 6.5 REQUIRED COMPONENTS Core Widgets Network)
 qt_standard_project_setup()
 
@@ -48,6 +55,8 @@ qt_add_executable(agent_
     projecthistorydialog.h
     projectconvdialog.cpp
     projectconvdialog.h
+    projectconversationservice.cpp
+    projectconversationservice.h
     app.qrc
 )
 

@@ -64,6 +64,9 @@ public:
     void clearAiState();
 
 signals:
+    // 用户点击取消生成按钮
+    void cancelRequested();
+
     void newConversationClicked();
     void conversationClicked(const QString &id);
     void sendClicked(const QString &text);
@@ -98,6 +101,7 @@ private:
     // ---- 输入 ----
     ElaPlainTextEdit *inputEdit_;
     ElaIconButton *sendButton_;
+    ElaIconButton *stopButton_;
 
     // ---- AI 内容状态 ----
     QString currentAiBuffer_;

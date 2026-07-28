@@ -60,8 +60,14 @@ ProjectConvDialog::ProjectConvDialog(ConversationManager *convMgr,
     QHBoxLayout *btnLayout = new QHBoxLayout;
     btnLayout->setSpacing(8);
 
+    ElaPushButton *newBtn = new ElaPushButton("新建", this);
+    newBtn->setMinimumWidth(80);
+    connect(newBtn, &ElaPushButton::clicked, this, &ProjectConvDialog::onNewClicked);
+    btnLayout->addWidget(newBtn);
+
     deleteBtn_ = new ElaPushButton("删除", this);
     deleteBtn_->setMinimumWidth(80);
+    deleteBtn_->setEnabled(false);
     connect(deleteBtn_, &ElaPushButton::clicked, this, &ProjectConvDialog::onDeleteClicked);
     btnLayout->addWidget(deleteBtn_);
     btnLayout->addStretch();
@@ -82,6 +88,7 @@ ProjectConvDialog::ProjectConvDialog(ConversationManager *convMgr,
     // 选择变化的响应
     connect(listWidget_, &QListWidget::currentRowChanged, this, [this](int row) {
         openBtn_->setEnabled(row >= 0);
+        deleteBtn_->setEnabled(row >= 0);
     });
 
     // 加载数据
@@ -158,6 +165,13 @@ void ProjectConvDialog::onItemDoubleClicked(QListWidgetItem *item)
         emit conversationSelected(convId);
         accept();
     }
+}
+
+void ProjectConvDialog::onNewClicked()
+{
+    // 关闭对话框前让 MainWindow 创建新对话
+    emit newConversationRequested();
+    accept();
 }
 
 void ProjectConvDialog::onDeleteClicked()

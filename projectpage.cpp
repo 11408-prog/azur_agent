@@ -150,7 +150,7 @@ bool ProjectPage::eventFilter(QObject *watched, QEvent *event)
     if (watched == inputEdit_ && event->type() == QEvent::KeyPress) {
         QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
         if ((keyEvent->key() == Qt::Key_Return || keyEvent->key() == Qt::Key_Enter)
-            && (keyEvent->modifiers() & Qt::ControlModifier)) {
+            && !(keyEvent->modifiers() & Qt::ShiftModifier)) {
             onSendClicked();
             return true;
         }
@@ -352,15 +352,24 @@ void ProjectPage::setupUI()
     QHBoxLayout *inputLayout = new QHBoxLayout();
     inputLayout->setSpacing(10);
     inputEdit_ = new ElaPlainTextEdit(centerPanel);
-    inputEdit_->setPlaceholderText("输入消息，Ctrl+Enter 发送...");
+    inputEdit_->setPlaceholderText("输入消息，Enter 发送，Shift+Enter 换行...");
     inputEdit_->setFixedHeight(64);
     inputEdit_->installEventFilter(this);
     inputLayout->addWidget(inputEdit_, 1);
 
     sendButton_ = new ElaIconButton(ElaIconType::PaperPlane, 18, 36, 36, centerPanel);
-    sendButton_->setToolTip("发送 (Ctrl+Enter)");
+    sendButton_->setToolTip("发送 (Enter)");
     connect(sendButton_, &ElaIconButton::clicked, this, &ProjectPage::onSendClicked);
     inputLayout->addWidget(sendButton_, 0, Qt::AlignBottom);
+
+    stopButton_ = new ElaIconButton(ElaIconType::Ban, 18, 36, 36, centerPanel);
+    stopButton_->setToolTip("停止生成");
+    stopButton_->setVisible(false);
+    connect(stopButton_, &ElaIconButton::clicked, this, [this]() {
+        engine_->cancel();
+        setInputEnabled(true);
+    });
+    inputLayout->addWidget(stopButton_, 0, Qt::AlignBottom);
     centerLayout->addLayout(inputLayout);
 
     splitter_->addWidget(centerPanel);
@@ -519,7 +528,14 @@ void ProjectPage::appendMessage(const QString &text, bool isUser)
     if (isUser) {
         bubble->setUserContent(text);
     } else {
-        bubble->setAiContent(text);
+        if (!text.isEmpty()) {
+            // 有内容：恢复历史或完整回复，直接渲染
+            bubble->setAiContent(text);
+        } else {
+            // 无内容：流式占位，显示旋转动画
+            bubble->setAiStreamingContent("⠋");
+            bubble->startContentSpinner();
+        }
         currentAiBubble_ = bubble;
     }
 
@@ -541,24 +557,6 @@ void ProjectPage::clearChatDisplay()
     }
 }
 
-#if 0
-// 以下函数已迁移到 MarkdownRenderer / MessageBubbleWidget
-void ProjectPage::adjustTextBrowserHeight(QTextBrowser *browser) { /* ... */ }
-QString ProjectPage::markdownToHtml(const QString &md, QStringList *) { return {}; }
-#endif
-
-// ==================== 操作记录（已废弃，由 ActivityPanel 替代） ====================
-#if 0
-void ProjectPage::appendOperationLog(const QString &text)
-{
-    const QString timestamp = QDateTime::currentDateTime().toString("HH:mm:ss");
-    operationLog_->append(QString("[%1] %2").arg(timestamp, text));
-    QScrollBar *vBar = operationLog_->verticalScrollBar();
-    QMetaObject::invokeMethod(this, [vBar]() {
-        vBar->setValue(vBar->maximum());
-    }, Qt::QueuedConnection);
-}
-#endif
 
 // ==================== 发送消息 ====================
 void ProjectPage::onSendClicked()
@@ -669,7 +667,9 @@ void ProjectPage::setInputEnabled(bool enabled)
 {
     isWaitingResponse_ = !enabled;
     inputEdit_->setEnabled(enabled);
+    sendButton_->setVisible(enabled);
     sendButton_->setEnabled(enabled);
+    stopButton_->setVisible(!enabled);
     if (enabled) inputEdit_->setFocus();
 }
 

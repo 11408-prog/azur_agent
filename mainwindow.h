@@ -45,6 +45,7 @@ class ProjectPage;
 class ProjectSession;
 class ChatPageWidget;
 class SettingPageWidget;
+class ProjectConversationService;
 
 class MainWindow : public ElaWindow
 {
@@ -99,42 +100,6 @@ private:
     ElaScrollPage *settingPage_;
     ElaScrollPage *aboutPage_;
 
-    // ========== 以下成员已提取到 ChatPageWidget ==========
-    // ElaScrollArea *messageScrollArea_;
-    // QWidget *messageContainer_;
-    // QVBoxLayout *messageLayout_;
-    // ElaPlainTextEdit *inputEdit_;
-    // ElaIconButton *sendButton_;
-    // QListWidget *historyList_;
-    // ElaPushButton *clearHistoryBtn_;
-    // QLabel *historyEmptyLabel_;
-    // QString lastUserMessage_;
-    // QString currentAiBuffer_;
-    // QTextBrowser *currentAiContent_;
-    // QWidget *currentStepRow_;
-    // QLabel *currentStepIcon_;
-    // QLabel *currentStepText_;
-    // QTimer *spinnerTimer_;
-    // int spinnerFrame_;
-    // QElapsedTimer requestElapsed_;
-    // QWidget *sidebarWidget_;
-    // bool sidebarCollapsed_ = false;
-    // ElaIconButton *toggleSidebarBtn_;
-    // QPropertyAnimation *sidebarAnimation_;
-    // QPropertyAnimation *sidebarOpacityAnimation_;
-    // QGraphicsOpacityEffect *sidebarOpacityEffect_;
-    // static constexpr int kSidebarExpandedWidth = 260;
-    // QSlider *bgOpacitySlider_;
-    // QPixmap bgPixmap_;
-
-    // ========== 以下成员已提取到 SettingPageWidget ==========
-    // ElaLineEdit *apiKeyEdit_;
-    // ElaLineEdit *baseUrlEdit_;
-    // ElaComboBox *modelComboBox_;
-    // QLabel *workspaceLabel_;
-    // ElaPushButton *selectWorkspaceBtn_;
-    // QStringList recentModels_;
-
     // ---- 业务成员（保留） ----
     QString historyFilePath_;
     QJsonArray historyEntries_;
@@ -145,6 +110,7 @@ private:
 
     ConversationManager *conversationManager_;
     ConversationManager *projectConvMgr_; // 项目模式专用的会话管理器（共享实例）
+    ProjectConversationService *projectConvService_; // 项目对话服务层
     QString currentConversationId_;
     QString systemPrompt_;
 
@@ -161,15 +127,14 @@ private:
     ElaIconButton *projectHistoryBtn_;
     ElaIconButton *projectConvListBtn_;    // 当前项目的对话列表
 
-    // ---- 项目历史记录 ----
-    void saveCurrentProjectEntry();
-    void switchToProjectEntry(const QString &path, const QString &convId);
+    // ---- 项目对话管理 ----
+    // 保存当前项目对话到持久化存储
     void saveProjectConversation();
-
-    // ---- 一次性迁移 ----
-    void migrateOldProjectConversations();
-
-    // ---- 项目对话列表 ----
+    // 保存项目入口到 QSettings 历史记录
+    void saveCurrentProjectEntry();
+    // 切换到目标项目的指定对话
+    void switchToProjectEntry(const QString &path, const QString &convId);
+    // 在当前项目中切换对话
     void switchToProjectConversation(const QString &convId);
 
     // ---- 双模式 ----

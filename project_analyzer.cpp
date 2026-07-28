@@ -10,6 +10,7 @@
 #include <QDebug>
 #include <QCoreApplication>
 #include <QDirIterator>
+#include <utility>
 
 // ==================== 默认跳过目录 ====================
 QStringList ProjectAnalyzer::defaultSkipDirs()
@@ -98,7 +99,7 @@ QJsonObject ProjectAnalyzer::buildIndex(const QString &workspaceRoot)
 
     // ---- 判断语言和框架 ----
     QStringList extensions;
-    for (const auto &f : files) {
+    for (const auto &f : qAsConst(files)) {
         if (!extensions.contains(f.extension)) {
             extensions.append(f.extension);
         }
@@ -113,20 +114,20 @@ QJsonObject ProjectAnalyzer::buildIndex(const QString &workspaceRoot)
 
     // ---- 统计 ----
     int totalLines = 0;
-    for (const auto &f : files) {
+    for (const auto &f : std::as_const(files)) {
         totalLines += f.lineCount;
     }
 
     // ---- 记录文件修改时间戳 ----
     QJsonObject fileTimestamps;
-    for (const auto &f : files) {
+    for (const auto &f : std::as_const(files)) {
         const QString fullPath = QDir(workspaceRoot).filePath(f.relPath);
         fileTimestamps[f.relPath] = fileLastModified(fullPath);
     }
 
     // ---- 序列化 ----
     QJsonArray filesArr;
-    for (const auto &f : files) {
+    for (const auto &f : std::as_const(files)) {
         QJsonObject fo;
         fo["path"] = f.relPath;
         fo["extension"] = f.extension;

@@ -151,7 +151,7 @@ void ActivityPanel::completeLastPending(const QString &finalText)
 
     // 如果没有 Pending 条目了，停止 spinner
     bool hasPending = false;
-    for (const auto &e : entries_) {
+    for (const auto &e : qAsConst(entries_)) {
         if (e.status == ActivityEntry::Pending) { hasPending = true; break; }
     }
     if (!hasPending) {
@@ -185,7 +185,7 @@ void ActivityPanel::failLastPending(const QString &finalText)
 
     // 如果没有 Pending 条目了，停止 spinner
     bool hasPending = false;
-    for (const auto &e : entries_) {
+    for (const auto &e : qAsConst(entries_)) {
         if (e.status == ActivityEntry::Pending) { hasPending = true; break; }
     }
     if (!hasPending) {

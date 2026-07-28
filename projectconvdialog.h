@@ -21,10 +21,12 @@ public:
 
 signals:
     void conversationSelected(const QString &convId);
+    void newConversationRequested();
 
 private slots:
     void onOpenClicked();
     void onDeleteClicked();
+    void onNewClicked();
     void onItemDoubleClicked(QListWidgetItem *item);
 
 private:

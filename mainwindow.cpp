@@ -4,6 +4,7 @@
 #include "promptloader.h"
 #include "projecthistorydialog.h"
 #include "projectconvdialog.h"
+#include "projectconversationservice.h"
 
 #include <ElaWindow.h>
 #include <ElaApplication.h>
@@ -60,6 +61,7 @@
 #include <QDebug>
 #include <QSet>
 #include <QPainter>
+#include <QtGlobal>
 #include <QPainterPath>
 
 #include "ai_client.h"
@@ -86,10 +88,23 @@ MainWindow::MainWindow(QWidget *parent)
     , sidebarToggleBtn_(nullptr)
     , openFolderBtn_(nullptr)
     , projectHistoryBtn_(nullptr)
+    , projectConvService_(nullptr)
 {
     qDebug()<<"[MAINWIN] 构造 MainWindow";
     setWindowTitle("Azur Agent");
     resize(1100, 750);
+
+    // 修复 tooltip 样式：防止 ElaWidgetTools 主题导致黑块
+    setStyleSheet(
+        "QToolTip {"
+        "   background-color: #2d2d2d;"
+        "   color: #e0e0e0;"
+        "   border: 1px solid #555;"
+        "   border-radius: 6px;"
+        "   padding: 6px 10px;"
+        "   font-size: 13px;"
+        "}"
+    );
 
     // 初始化聊天会话管理器（存聊天模式对话）
     conversationManager_ = new ConversationManager(this);
@@ -116,8 +131,12 @@ MainWindow::MainWindow(QWidget *parent)
         // 项目对话列表已变更，无需额外操作
     });
 
+    // 初始化项目对话服务层
+    projectConvService_ = new ProjectConversationService(
+        projectConvMgr_, conversationManager_, this);
+
     // 一次性迁移旧项目对话
-    migrateOldProjectConversations();
+    projectConvService_->migrateOldConversations();
 
     // ---- 创建解耦组件 ----
     chatPageWidget_ = new ChatPageWidget(this);
@@ -133,6 +152,12 @@ MainWindow::MainWindow(QWidget *parent)
         if (text.trimmed().isEmpty()) return;
         lastUserMessage_ = text;
         onSendClicked();
+    });
+    connect(chatPageWidget_, &ChatPageWidget::cancelRequested, this, [this]() {
+        if (chatEngine_) {
+            chatEngine_->cancel();
+            chatPageWidget_->setInputEnabled(true);
+        }
     });
     connect(chatPageWidget_, &ChatPageWidget::clearHistoryClicked, this, [this]() {
         QMessageBox::StandardButton reply = QMessageBox::question(
@@ -297,9 +322,17 @@ MainWindow::MainWindow(QWidget *parent)
             this, [this](const QList<QJsonObject> &messages) {
         if (currentMode_ != AgentMode::Project) return;
         QJsonArray arr;
-        for (const auto &msg : messages) arr.append(msg);
+        for (const auto &msg : qAsConst(messages)) arr.append(msg);
         QString projectPath = currentProject_ ? currentProject_->projectPath : QString();
-        projectConvMgr_->saveConversation(currentConversationId_, arr, QString(), projectPath);
+        projectConvService_->saveConversation(currentConversationId_, arr, projectPath);
+    });
+
+    // 项目对话标题更新时持久化（基于第一条用户消息自动命名）
+    connect(projectPageWidget_, &ProjectPage::titleChanged,
+            this, [this](const QString &title) {
+        if (currentMode_ != AgentMode::Project) return;
+        projectConvService_->renameConversation(currentConversationId_, title);
+        saveCurrentProjectEntry();
     });
 
     updateToggleButtonState();
@@ -384,7 +417,7 @@ void MainWindow::setupNavigation()
             // 共享项目管理器已有初始化好的 projectConvMgr_
 
             // 在项目管理器中创建新对话
-            currentConversationId_ = projectConvMgr_->createNewConversation("项目对话");
+            currentConversationId_ = projectConvService_->createConversation(dir);
 
             currentProject_ = new ProjectSession(ProjectSession::load(dir));
             if (!currentProject_->isValid()) {
@@ -425,6 +458,17 @@ void MainWindow::setupNavigation()
                                currentConversationId_, this);
         connect(&dlg, &ProjectConvDialog::conversationSelected,
                 this, &MainWindow::switchToProjectConversation);
+        connect(&dlg, &ProjectConvDialog::newConversationRequested,
+                this, [this]() {
+            if (!currentProject_ || currentProject_->projectPath.isEmpty()) return;
+            // 保存当前对话
+            saveProjectConversation();
+            // 创建新对话并绑定到当前项目
+            currentConversationId_ = projectConvService_->createConversation(
+                currentProject_->projectPath);
+            projectPageWidget_->restoreConversation({});
+            saveCurrentProjectEntry();
+        });
         dlg.exec();
     });
 
@@ -587,7 +631,7 @@ void MainWindow::onApiResponseCompleted(const QString &fullText)
 
     // 保存到文件
     QJsonArray messagesArray;
-    for (const QJsonObject &msg : messageHistory_) {
+    for (const QJsonObject &msg : qAsConst(messageHistory_)) {
         messagesArray.append(msg);
     }
     conversationManager_->saveConversation(currentConversationId_, messagesArray, title);
@@ -697,54 +741,16 @@ void MainWindow::finishProjectInit()
 {
     if (!currentProject_) return;
 
-    // 尝试从历史记录恢复已有的项目对话
-    QSettings s2("AzurStudio", "AzurAgent");
-    const QJsonArray projHistory = s2.value("projectHistory").toJsonArray();
-    QString prevConvId;
-    for (const QJsonValue &val : projHistory) {
-        const QJsonObject entry = val.toObject();
-        if (entry["path"].toString() == QDir::toNativeSeparators(QDir::cleanPath(currentProject_->projectPath))) {
-            prevConvId = entry["conversationId"].toString();
-            break;
-        }
-    }
-
+    // 使用服务层解析/创建项目对话
     const QString projPath = QDir::toNativeSeparators(QDir::cleanPath(currentProject_->projectPath));
-    bool convExists = false;
-    if (!prevConvId.isEmpty()) {
-        const QJsonArray projMeta = projectConvMgr_->conversationsForProject(projPath);
-        for (const QJsonValue &v : projMeta) {
-            if (v.toObject()["id"].toString() == prevConvId) {
-                convExists = true;
-                break;
-            }
-        }
-    }
+    const QString prevConvId = ProjectConversationService::findEntryConversationId(projPath);
+    currentConversationId_ = projectConvService_->resolveConversation(projPath, prevConvId);
 
-    if (convExists) {
-        currentConversationId_ = prevConvId;
-        QJsonArray prevMessages = projectConvMgr_->loadConversation(currentConversationId_);
-        QList<QJsonObject> msgList;
-        for (const QJsonValue &v : prevMessages) msgList.append(v.toObject());
-        projectPageWidget_->restoreConversation(msgList);
-    } else if (!prevConvId.isEmpty()) {
-        // 尝试从全局管理器迁移旧对话
-        QJsonArray oldMessages = conversationManager_->loadConversation(prevConvId);
-        if (!oldMessages.isEmpty()) {
-            projectConvMgr_->saveConversation(prevConvId, oldMessages, QString(), projPath);
-            // 迁移后从全局管理器删除旧对话
-            conversationManager_->deleteConversation(prevConvId);
-            currentConversationId_ = prevConvId;
-            QList<QJsonObject> msgList;
-            for (const QJsonValue &v : oldMessages) msgList.append(v.toObject());
-            projectPageWidget_->restoreConversation(msgList);
-            qDebug() << "[MAINWIN] 已将对话从全局管理器迁移到项目管理器:" << prevConvId;
-        } else {
-            currentConversationId_ = projectConvMgr_->createNewConversation("项目对话");
-        }
-    } else {
-        currentConversationId_ = projectConvMgr_->createNewConversation("项目对话");
-    }
+    // 加载对话消息
+    QJsonArray prevMessages = projectConvService_->loadConversation(currentConversationId_);
+    QList<QJsonObject> msgList;
+    for (const QJsonValue &v : prevMessages) msgList.append(v.toObject());
+    projectPageWidget_->restoreConversation(msgList);
 
     projectPageWidget_->loadSystemPrompt();
     ToolExecutor::setAllowedPaths(currentProject_->allowedPaths);
@@ -898,55 +904,12 @@ void MainWindow::restoreSidebarState(bool collapsed)
     chatPageWidget_->restoreSidebarState(collapsed);
 }
 
-// ==================== 项目历史记录 ====================
-#if 0
-// 已迁移到 ProjectHistoryDialog
-void MainWindow::rebuildProjectHistoryMenu() {}
-#endif
-
 void MainWindow::saveCurrentProjectEntry()
 {
     if (!currentProject_ || currentProject_->projectPath.isEmpty()) return;
-
-    QSettings s("AzurStudio", "AzurAgent");
-    QJsonArray history = s.value("projectHistory").toJsonArray();
-
-    // 获取当前对话标题（从项目管理器查找）
-    QString convTitle;
-    const QJsonArray meta = projectConvMgr_->conversationsMeta();
-    for (const QJsonValue &v : meta) {
-        QJsonObject m = v.toObject();
-        if (m["id"].toString() == currentConversationId_) {
-            convTitle = m["title"].toString();
-            break;
-        }
-    }
-
-    const QString cleanPath = QDir::toNativeSeparators(QDir::cleanPath(currentProject_->projectPath));
-    QJsonObject newEntry;
-    newEntry["path"] = cleanPath;
-    newEntry["name"] = QDir(cleanPath).dirName();
-    newEntry["conversationId"] = currentConversationId_;
-    newEntry["conversationTitle"] = convTitle;
-    newEntry["lastOpened"] = QDateTime::currentDateTime().toString(Qt::ISODate);
-
-    // 去重：移除已存在的相同路径
-    for (int i = 0; i < history.size(); ++i) {
-        if (history[i].toObject()["path"].toString() == cleanPath) {
-            history.removeAt(i);
-            break;
-        }
-    }
-
-    // 插到最前面
-    history.prepend(newEntry);
-
-    // 最多保留 10 条
-    while (history.size() > 10) {
-        history.removeLast();
-    }
-
-    s.setValue("projectHistory", history);
+    QString convTitle = projectConvService_->conversationTitle(currentConversationId_);
+    ProjectConversationService::saveProjectEntry(
+        currentProject_->projectPath, currentConversationId_, convTitle);
 }
 
 void MainWindow::saveProjectConversation()
@@ -955,9 +918,9 @@ void MainWindow::saveProjectConversation()
     const QList<QJsonObject> messages = projectPageWidget_->conversation();
     if (messages.isEmpty()) return;
     QJsonArray arr;
-    for (const auto &msg : messages) arr.append(msg);
+    for (const auto &msg : qAsConst(messages)) arr.append(msg);
     QString projectPath = currentProject_ ? currentProject_->projectPath : QString();
-    projectConvMgr_->saveConversation(currentConversationId_, arr, QString(), projectPath);
+    projectConvService_->saveConversation(currentConversationId_, arr, projectPath);
 }
 
 void MainWindow::switchToProjectEntry(const QString &path, const QString &convId)
@@ -979,60 +942,16 @@ void MainWindow::switchToProjectEntry(const QString &path, const QString &convId
         currentProject_->save();
     }
 
-    // 初始化项目专用的会话管理器
-    // 共享项目管理器已在构造函数初始化，无需重复初始化
-
-    // 从历史记录中取出关联的 conversationId
-    QSettings s("AzurStudio", "AzurAgent");
-    const QJsonArray history = s.value("projectHistory").toJsonArray();
-    QString targetConvId = convId;
-    for (const QJsonValue &val : history) {
-        const QJsonObject entry = val.toObject();
-        if (entry["path"].toString() == cleanPath) {
-            targetConvId = entry["conversationId"].toString();
-            break;
-        }
-    }
-
-    // 检查目标对话是否存在于项目管理器中（按项目过滤）
-    const QJsonArray projectMeta = projectConvMgr_->conversationsForProject(cleanPath);
-    bool convExists = false;
-    if (!targetConvId.isEmpty()) {
-        for (const QJsonValue &val : projectMeta) {
-            if (val.toObject()["id"].toString() == targetConvId) {
-                convExists = true;
-                break;
-            }
-        }
-    }
-
-    // 设置会话 ID
-    if (convExists) {
-        currentConversationId_ = targetConvId;
-    } else if (!targetConvId.isEmpty()) {
-        // 尝试从全局管理器迁移旧对话
-        QJsonArray oldMessages = conversationManager_->loadConversation(targetConvId);
-        if (!oldMessages.isEmpty()) {
-            projectConvMgr_->saveConversation(targetConvId, oldMessages, QString(), cleanPath);
-            // 迁移后从全局管理器删除旧对话
-            conversationManager_->deleteConversation(targetConvId);
-            currentConversationId_ = targetConvId;
-
-            qDebug() << "[MAINWIN] 已将对话从全局管理器迁移到项目管理器:" << targetConvId;
-        } else {
-            currentConversationId_ = projectConvMgr_->createNewConversation("项目对话");
-        }
-    } else {
-        currentConversationId_ = projectConvMgr_->createNewConversation("项目对话");
-    }
+    // 使用服务层解析对话 ID（自动处理迁移）
+    currentConversationId_ = projectConvService_->resolveConversation(cleanPath, convId);
 
     // 更新 UI
     projectPageWidget_->setProjectPath(currentProject_->projectPath);
     ToolExecutor::setAllowedPaths(currentProject_->allowedPaths);
     chatEngine_->setAllowedPaths(currentProject_->allowedPaths);
 
-    // 从项目管理器加载历史对话
-    QJsonArray messages = projectConvMgr_->loadConversation(currentConversationId_);
+    // 加载历史对话
+    QJsonArray messages = projectConvService_->loadConversation(currentConversationId_);
     QList<QJsonObject> msgList;
     for (const QJsonValue &v : messages) {
         msgList.append(v.toObject());
@@ -1043,9 +962,6 @@ void MainWindow::switchToProjectEntry(const QString &path, const QString &convId
     saveCurrentProjectEntry();
 }
 
-#if 0
-#endif
-
 void MainWindow::switchToProjectConversation(const QString &convId)
 {
     if (!projectPageWidget_) return;
@@ -1055,7 +971,7 @@ void MainWindow::switchToProjectConversation(const QString &convId)
 
     // 切换到目标对话
     currentConversationId_ = convId;
-    QJsonArray messages = projectConvMgr_->loadConversation(convId);
+    QJsonArray messages = projectConvService_->loadConversation(convId);
     QList<QJsonObject> msgList;
     for (const QJsonValue &v : messages) {
         msgList.append(v.toObject());
@@ -1064,87 +980,4 @@ void MainWindow::switchToProjectConversation(const QString &convId)
     saveCurrentProjectEntry();
 
     qDebug() << "[MAINWIN] 切换到项目对话:" << convId;
-}
-
-// ==================== 一次性迁移旧项目对话 ====================
-void MainWindow::migrateOldProjectConversations()
-{
-    QSettings s("AzurStudio", "AzurAgent");
-    if (s.value("projectConvMigrationDone", false).toBool()) {
-        qDebug() << "[MAINWIN] 项目对话迁移已完成，跳过";
-        return;
-    }
-
-    qDebug() << "[MAINWIN] 开始迁移旧项目对话...";
-
-    // a) 从旧的项目目录 {projectPath}/.azur/data/chats/ 迁移
-    const QJsonArray projHistory = s.value("projectHistory").toJsonArray();
-    for (const QJsonValue &val : projHistory) {
-        const QJsonObject entry = val.toObject();
-        const QString projectPath = entry["path"].toString();
-        if (projectPath.isEmpty()) continue;
-
-        QString oldDataDir = QDir::toNativeSeparators(
-            QDir::cleanPath(projectPath) + "/.azur/data");
-        QString oldChatsDir = oldDataDir + "/chats";
-
-        // 检查旧目录是否存在
-        QDir oldDir(oldChatsDir);
-        if (!oldDir.exists()) continue;
-
-        // 创建临时管理器读取旧对话
-        ConversationManager *tmpMgr = new ConversationManager(this);
-        if (!tmpMgr->initialize(oldDataDir)) {
-            qWarning() << "[MAINWIN] 无法读取旧项目对话目录:" << oldDataDir;
-            delete tmpMgr;
-            continue;
-        }
-
-        // 迁移每条旧对话
-        const QJsonArray oldMeta = tmpMgr->conversationsMeta();
-        for (const QJsonValue &mv : oldMeta) {
-            QJsonObject metaObj = mv.toObject();
-            QString convId = metaObj["id"].toString();
-            QString title = metaObj["title"].toString();
-            QJsonArray messages = tmpMgr->loadConversation(convId);
-            if (!messages.isEmpty()) {
-                projectConvMgr_->saveConversation(convId, messages, title, projectPath);
-                qDebug() << "[MAINWIN] 从项目目录迁移对话:" << convId << "->" << projectPath;
-            }
-        }
-        delete tmpMgr;
-    }
-
-    // b) 从全局管理器中的项目对话迁移
-    const QJsonArray chatMeta = conversationManager_->conversationsMeta();
-    // 构建项目路径集合用于判断
-    QSet<QString> projectPaths;
-    for (const QJsonValue &val : projHistory) {
-        projectPaths.insert(val.toObject()["path"].toString());
-    }
-
-    for (const QJsonValue &mv : chatMeta) {
-        QJsonObject metaObj = mv.toObject();
-        QString convId = metaObj["id"].toString();
-        QString title = metaObj["title"].toString();
-
-        // 检查此对话 ID 是否在项目历史记录中
-        for (const QJsonValue &val : projHistory) {
-            QJsonObject entry = val.toObject();
-            if (entry["conversationId"].toString() == convId) {
-                QString projectPath = entry["path"].toString();
-                QJsonArray messages = conversationManager_->loadConversation(convId);
-                if (!messages.isEmpty()) {
-                    projectConvMgr_->saveConversation(convId, messages, title, projectPath);
-                    qDebug() << "[MAINWIN] 从全局管理器迁移项目对话:" << convId << "->" << projectPath;
-                }
-                // 从全局管理器中删除
-                conversationManager_->deleteConversation(convId);
-                break;
-            }
-        }
-    }
-
-    s.setValue("projectConvMigrationDone", true);
-    qDebug() << "[MAINWIN] 项目对话迁移完成";
 }
