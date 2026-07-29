@@ -1,4 +1,5 @@
 #include "projecthistorydialog.h"
+#include "appsettings.h"
 
 #include <ElaPushButton.h>
 #include <ElaText.h>
@@ -8,7 +9,6 @@
 #include <QListWidget>
 #include <QListWidgetItem>
 #include <QLabel>
-#include <QSettings>
 #include <QJsonDocument>
 #include <QJsonArray>
 #include <QJsonObject>
@@ -88,8 +88,7 @@ void ProjectHistoryDialog::populateList()
 {
     listWidget_->clear();
 
-    QSettings s("AzurStudio", "AzurAgent");
-    history_ = s.value("projectHistory").toJsonArray();
+    history_ = AppSettings::projectHistory();
 
     if (history_.isEmpty()) {
         QListWidgetItem *emptyItem = new QListWidgetItem("暂无历史记录");
@@ -178,9 +177,8 @@ void ProjectHistoryDialog::onDeleteClicked()
 
     if (reply != QMessageBox::Yes) return;
 
-    // 从 QSettings 中移除
-    QSettings s("AzurStudio", "AzurAgent");
-    QJsonArray history = s.value("projectHistory").toJsonArray();
+    // 从设置中移除
+    QJsonArray history = AppSettings::projectHistory();
     const QString cleanPath = QDir::toNativeSeparators(QDir::cleanPath(path));
     for (int i = 0; i < history.size(); ++i) {
         if (history[i].toObject()["path"].toString() == cleanPath) {
@@ -188,7 +186,7 @@ void ProjectHistoryDialog::onDeleteClicked()
             break;
         }
     }
-    s.setValue("projectHistory", history);
+    AppSettings::setProjectHistory(history);
 
     // 重新加载列表
     populateList();

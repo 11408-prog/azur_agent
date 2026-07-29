@@ -1,7 +1,7 @@
 #include "projectconversationservice.h"
 #include "conversationmanager.h"
+#include "appsettings.h"
 
-#include <QSettings>
 #include <QDir>
 #include <QJsonObject>
 #include <QJsonArray>
@@ -67,8 +67,7 @@ void ProjectConversationService::saveProjectEntry(
 {
     if (projectPath.isEmpty() || convId.isEmpty()) return;
 
-    QSettings s("AzurStudio", "AzurAgent");
-    QJsonArray history = s.value("projectHistory").toJsonArray();
+    QJsonArray history = AppSettings::projectHistory();
 
     const QString cleanPath = QDir::toNativeSeparators(QDir::cleanPath(projectPath));
     QJsonObject newEntry;
@@ -93,7 +92,7 @@ void ProjectConversationService::saveProjectEntry(
         history.removeLast();
     }
 
-    s.setValue("projectHistory", history);
+    AppSettings::setProjectHistory(history);
 }
 
 QString ProjectConversationService::findEntryConversationId(
@@ -101,8 +100,7 @@ QString ProjectConversationService::findEntryConversationId(
 {
     if (projectPath.isEmpty()) return {};
 
-    QSettings s("AzurStudio", "AzurAgent");
-    const QJsonArray history = s.value("projectHistory").toJsonArray();
+    const QJsonArray history = AppSettings::projectHistory();
     const QString cleanPath = QDir::toNativeSeparators(QDir::cleanPath(projectPath));
 
     for (const QJsonValue &val : history) {
@@ -168,8 +166,7 @@ QString ProjectConversationService::createConversation(
 
 void ProjectConversationService::migrateOldConversations()
 {
-    QSettings s("AzurStudio", "AzurAgent");
-    if (s.value("projectConvMigrationDone", false).toBool()) {
+    if (AppSettings::projectConvMigrationDone()) {
         qDebug() << "[ConvService] 项目对话迁移已完成，跳过";
         return;
     }
@@ -177,7 +174,7 @@ void ProjectConversationService::migrateOldConversations()
     qDebug() << "[ConvService] 开始迁移旧项目对话...";
 
     // a) 从旧的项目目录 {projectPath}/.azur/data/chats/ 迁移
-    const QJsonArray projHistory = s.value("projectHistory").toJsonArray();
+    const QJsonArray projHistory = AppSettings::projectHistory();
     for (const QJsonValue &val : projHistory) {
         const QJsonObject entry = val.toObject();
         const QString projectPath = entry["path"].toString();
@@ -241,6 +238,6 @@ void ProjectConversationService::migrateOldConversations()
         }
     }
 
-    s.setValue("projectConvMigrationDone", true);
+    AppSettings::setProjectConvMigrationDone(true);
     qDebug() << "[ConvService] 项目对话迁移完成";
 }

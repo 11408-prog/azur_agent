@@ -5,6 +5,8 @@
 #include "projecthistorydialog.h"
 #include "projectconvdialog.h"
 #include "projectconversationservice.h"
+#include "confirmdialogs.h"
+#include "appsettings.h"
 
 #include <ElaWindow.h>
 #include <ElaApplication.h>
@@ -20,7 +22,6 @@
 #include <ElaMessageBar.h>
 #include <ElaListView.h>
 #include <ElaIcon.h>
-#include <ElaContentDialog.h>
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -33,7 +34,6 @@
 #include <QDir>
 #include <QMessageBox>
 #include <QCloseEvent>
-#include <QSettings>
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -51,7 +51,6 @@
 #include <QDesktopServices>
 #include <QUrl>
 #include <QRegularExpression>
-#include <ElaContentDialog.h>
 #include <QInputDialog>
 #include <QDialog>
 #include <QPushButton>
@@ -215,45 +214,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     // ---- 写操作确认弹窗（Chat 模式） ----
     connect(chatEngine_, &AgentEngine::writeConfirmationRequired, this, [this](const QStringList &diffList) {
-        ElaContentDialog dlg(this);
-        dlg.setWindowTitle("修改确认");
-
-        QWidget *centralWidget = new QWidget(&dlg);
-        QVBoxLayout *centralLayout = new QVBoxLayout(centralWidget);
-        centralLayout->setContentsMargins(0, 0, 0, 0);
-        centralLayout->setSpacing(10);
-
-        ElaText *infoLabel = new ElaText(
-            QString("AI 请求对以下 %1 个文件进行修改：").arg(diffList.size()), centralWidget);
-        infoLabel->setTextStyle(ElaTextType::Body);
-        QFont infoFont = infoLabel->font();
-        infoFont.setBold(true);
-        infoLabel->setFont(infoFont);
-        centralLayout->addWidget(infoLabel);
-
-        QTextBrowser *diffBrowser = new QTextBrowser(centralWidget);
-        diffBrowser->setReadOnly(true);
-        diffBrowser->setFrameShape(QFrame::NoFrame);
-        diffBrowser->setStyleSheet(
-            "QTextBrowser { background: #1e1e1e; color: #d4d4d4; "
-            "font-family: 'Consolas', monospace; font-size: 13px; "
-            "padding: 12px; border-radius: 8px; }");
-        diffBrowser->setPlainText(diffList.join("\n\n--------------------\n\n"));
-        centralLayout->addWidget(diffBrowser, 1);
-
-        dlg.setCentralWidget(centralWidget);
-        dlg.setLeftButtonText("拒绝修改");
-        dlg.setRightButtonText("接受修改");
-
-        connect(&dlg, &ElaContentDialog::leftButtonClicked, &dlg, &QDialog::reject);
-        connect(&dlg, &ElaContentDialog::rightButtonClicked, &dlg, &QDialog::accept);
-
-        QShortcut *enterShortcut = new QShortcut(QKeySequence(Qt::Key_Return), &dlg);
-        QShortcut *enterShortcut2 = new QShortcut(QKeySequence(Qt::Key_Enter), &dlg);
-        connect(enterShortcut, &QShortcut::activated, &dlg, &QDialog::accept);
-        connect(enterShortcut2, &QShortcut::activated, &dlg, &QDialog::accept);
-
-        const bool accepted = (dlg.exec() == QDialog::Accepted);
+        const bool accepted = ConfirmDialogs::confirmWriteOperations(this, diffList);
         chatEngine_->confirmWrite(accepted);
     });
 
@@ -294,8 +255,7 @@ MainWindow::MainWindow(QWidget *parent)
         QPixmap bgPixmap(bgPath);
         if (!bgPixmap.isNull()) {
             chatPageWidget_->setBackgroundPixmap(bgPixmap);
-            QSettings s("AzurStudio", "AzurAgent");
-            chatPageWidget_->applyChatBg(s.value("bgOpacity", 25).toInt());
+            chatPageWidget_->applyChatBg(AppSettings::bgOpacity());
         }
     }
 
@@ -439,8 +399,7 @@ void MainWindow::setupNavigation()
 
         const QString dir = QFileDialog::getExistingDirectory(this, "选择项目目录");
         if (!dir.isEmpty()) {
-            QSettings s("AzurStudio", "AzurAgent");
-            s.setValue("lastProjectPath", dir);
+            AppSettings::setLastProjectPath(dir);
             modeManager_->openProject(dir);
         }
     });
@@ -603,10 +562,7 @@ void MainWindow::onSendClicked()
     }
 
     // 同步"Agent 权限"设置（每次确认 / 自动执行）到引擎
-    {
-        QSettings s("AzurStudio", "AzurAgent");
-        chatEngine_->setAutoExecute(s.value("agentPermission", 0).toInt() == 1);
-    }
+    chatEngine_->setAutoExecute(AppSettings::agentPermission() == 1);
 
     chatPageWidget_->appendMessage(text, true);
     lastUserMessage_ = text;

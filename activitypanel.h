@@ -52,7 +52,6 @@ private:
 
     QTimer *spinnerTimer_;
     int spinnerFrame_ = 0;
-    static const QStringList kSpinnerFrames;
 };
 
 #endif // ACTIVITYPANEL_H

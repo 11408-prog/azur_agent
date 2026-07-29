@@ -1,5 +1,6 @@
 #include "messagebubblewidget.h"
 #include "markdownrenderer.h"
+#include "uiconstants.h"
 
 #include <ElaScrollPageArea.h>
 #include <ElaText.h>
@@ -59,6 +60,21 @@ void MessageBubbleWidget::setAvatarDirectory(const QString &dir)
     s_avatarDir = dir;
 }
 
+void MessageBubbleWidget::updateBubbleMaxWidth()
+{
+    // 自适应宽度：不超过父容器可用宽度的 3/4
+    QWidget *p = parentWidget();
+    if (!p) return;
+    int w = p->width() - 16; // 减去边距
+    bubble_->setMaximumWidth(qBound(400, w * 1 / 4, w - 40));
+}
+
+void MessageBubbleWidget::resizeEvent(QResizeEvent *event)
+{
+    QWidget::resizeEvent(event);
+    updateBubbleMaxWidth();
+}
+
 void MessageBubbleWidget::initUI()
 {
     QHBoxLayout *rowLayout = new QHBoxLayout(this);
@@ -71,7 +87,7 @@ void MessageBubbleWidget::initUI()
     bubble_->setBorderRadius(10);
     bubble_->setMinimumHeight(0);
     bubble_->setMaximumHeight(QWIDGETSIZE_MAX);
-    bubble_->setMaximumWidth(QWIDGETSIZE_MAX);
+    bubble_->setMaximumWidth(700); // 初始值，resizeEvent 会动态更新
 
     bubbleLayout_ = new QVBoxLayout(bubble_);
     bubbleLayout_->setContentsMargins(12, 6, 12, 6);
@@ -240,7 +256,7 @@ void MessageBubbleWidget::startContentSpinner()
     if (!contentSpinnerTimer_) {
         contentSpinnerTimer_ = new QTimer(this);
         connect(contentSpinnerTimer_, &QTimer::timeout, this, [this]() {
-            static const QStringList frames = {"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"};
+            const QStringList &frames = UiConstants::kSpinnerFrames;
             contentSpinnerFrame_++;
             contentBrowser_->setPlainText(QStringLiteral("思考中 %1").arg(frames[contentSpinnerFrame_ % frames.size()]));
             MarkdownRenderer::adjustTextBrowserHeight(contentBrowser_);
@@ -266,7 +282,7 @@ void MessageBubbleWidget::setAiStreamingContent(const QString &plainText)
     contentBrowser_->setPlainText(plainText);
     MarkdownRenderer::adjustTextBrowserHeight(contentBrowser_);
     // 更新最大宽度限制，确保内容完整可见
-    bubble_->setMaximumWidth(QWIDGETSIZE_MAX);
+    updateBubbleMaxWidth();
 }
 
 QTextBrowser *MessageBubbleWidget::aiContentBrowser() const
@@ -333,12 +349,11 @@ void MessageBubbleWidget::finishStep(bool success, const QString &finalText)
     }
 }
 
-static const QStringList kSpinnerFrames = {"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"};
-
 void MessageBubbleWidget::spinnerTick(int frame)
 {
     if (stepIcon_) {
-        stepIcon_->setText(kSpinnerFrames[frame % kSpinnerFrames.size()]);
+        const QStringList &frames = UiConstants::kSpinnerFrames;
+        stepIcon_->setText(frames[frame % frames.size()]);
     }
 }
 

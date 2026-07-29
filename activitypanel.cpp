@@ -1,19 +1,8 @@
 #include "activitypanel.h"
+#include "uiconstants.h"
 
 #include <QScrollBar>
 #include <QHBoxLayout>
-
-const QStringList ActivityPanel::kSpinnerFrames = {
-    QStringLiteral("\u280B"), // ⠋
-    QStringLiteral("\u2819"), // ⠙
-    QStringLiteral("\u2839"), // ⠹
-    QStringLiteral("\u2838"), // ⠸
-    QStringLiteral("\u283C"), // ⠼
-    QStringLiteral("\u2834"), // ⠴
-    QStringLiteral("\u2826"), // ⠦
-    QStringLiteral("\u2827"), // ⠧
-    QStringLiteral("\u280F"), // ⠏
-};
 
 ActivityPanel::ActivityPanel(QWidget *parent)
     : QWidget(parent)
@@ -59,12 +48,12 @@ ActivityPanel::ActivityPanel(QWidget *parent)
     spinnerTimer_ = new QTimer(this);
     spinnerTimer_->setInterval(200);
     connect(spinnerTimer_, &QTimer::timeout, this, [this]() {
-        spinnerFrame_ = (spinnerFrame_ + 1) % kSpinnerFrames.size();
+        spinnerFrame_ = (spinnerFrame_ + 1) % UiConstants::kSpinnerFrames.size();
         // 更新所有 Pending 条目的 spinner 图标
         for (int i = 0; i < rows_.size(); ++i) {
             if (i < entries_.size() && entries_[i].status == ActivityEntry::Pending) {
                 if (rows_[i].icon) {
-                    rows_[i].icon->setText(kSpinnerFrames[spinnerFrame_]);
+                    rows_[i].icon->setText(UiConstants::kSpinnerFrames[spinnerFrame_]);
                 }
             }
         }
@@ -97,7 +86,7 @@ void ActivityPanel::addPendingActivity(const QString &text)
     rowLayout->setContentsMargins(8, 4, 8, 4);
     rowLayout->setSpacing(8);
 
-    QLabel *iconLabel = new QLabel(kSpinnerFrames[spinnerFrame_], row);
+    QLabel *iconLabel = new QLabel(UiConstants::kSpinnerFrames[spinnerFrame_], row);
     iconLabel->setFixedWidth(20);
     iconLabel->setStyleSheet("color: #4a9eff; font-size: 12px; background: transparent;");
     iconLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);

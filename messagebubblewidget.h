@@ -45,10 +45,14 @@ public:
     // ---- 全局头像目录配置 ----
     static void setAvatarDirectory(const QString &dir);
 
+protected:
+    void resizeEvent(QResizeEvent *event) override;
+
 private:
     void initUI();
     QLabel *createAvatar();
     void createStepIndicator();
+    void updateBubbleMaxWidth();
 
     bool isUser_;
     QLabel *avatar_;

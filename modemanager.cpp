@@ -3,10 +3,10 @@
 #include "projectpage.h"
 #include "projectconversationservice.h"
 #include "tool_executor.h"
+#include "appsettings.h"
 
 #include <QDir>
 #include <QFileDialog>
-#include <QSettings>
 #include <QTimer>
 #include <QJsonArray>
 #include <QJsonObject>
@@ -32,8 +32,7 @@ void ModeManager::enterProjectMode(QWidget *parentWidget)
 
     // 如果还没有项目路径，弹窗让用户选择
     if (!currentProject_ || currentProject_->projectPath.isEmpty()) {
-        QSettings s("AzurStudio", "AzurAgent");
-        QString lastProject = s.value("lastProjectPath").toString();
+        QString lastProject = AppSettings::lastProjectPath();
 
         const QString dirPath = QFileDialog::getExistingDirectory(
             parentWidget, "选择项目目录",
@@ -51,7 +50,7 @@ void ModeManager::enterProjectMode(QWidget *parentWidget)
             currentProject_->projectPath = dirPath;
             currentProject_->save();
         }
-        s.setValue("lastProjectPath", dirPath);
+        AppSettings::setLastProjectPath(dirPath);
     }
 
     // 延迟执行重任务，让 UI 先完成导航动画

@@ -59,6 +59,11 @@ qt_add_executable(agent_
     projectconversationservice.h
     modemanager.cpp
     modemanager.h
+    confirmdialogs.cpp
+    confirmdialogs.h
+    uiconstants.h
+    appsettings.cpp
+    appsettings.h
     app.qrc
 )
 

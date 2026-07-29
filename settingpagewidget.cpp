@@ -1,4 +1,5 @@
 #include "settingpagewidget.h"
+#include "appsettings.h"
 
 #include <ElaLineEdit.h>
 #include <ElaComboBox.h>
@@ -11,7 +12,6 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QSlider>
-#include <QSettings>
 #include <QUrl>
 #include <QDebug>
 
@@ -156,13 +156,9 @@ void SettingPageWidget::setupUI()
     modeLabel->setFixedWidth(100);
     ElaComboBox *modeCombo = new ElaComboBox(modeRow);
     modeCombo->addItems({"聊天模式", "项目模式"});
-    {
-        QSettings s("AzurStudio", "AzurAgent");
-        modeCombo->setCurrentIndex(s.value("startupMode", 0).toInt());
-    }
+    modeCombo->setCurrentIndex(AppSettings::startupMode());
     connect(modeCombo, &QComboBox::currentIndexChanged, this, [](int idx) {
-        QSettings settings("AzurStudio", "AzurAgent");
-        settings.setValue("startupMode", idx);
+        AppSettings::setStartupMode(idx);
     });
     modeLayout->addWidget(modeLabel);
     modeLayout->addWidget(modeCombo, 1);
@@ -176,13 +172,9 @@ void SettingPageWidget::setupUI()
     permLabel->setFixedWidth(100);
     ElaComboBox *permCombo = new ElaComboBox(permRow);
     permCombo->addItems({"每次确认", "自动执行"});
-    {
-        QSettings s("AzurStudio", "AzurAgent");
-        permCombo->setCurrentIndex(s.value("agentPermission", 0).toInt());
-    }
+    permCombo->setCurrentIndex(AppSettings::agentPermission());
     connect(permCombo, &QComboBox::currentIndexChanged, this, [](int idx) {
-        QSettings settings("AzurStudio", "AzurAgent");
-        settings.setValue("agentPermission", idx);
+        AppSettings::setAgentPermission(idx);
     });
     permLayout->addWidget(permLabel);
     permLayout->addWidget(permCombo, 1);
@@ -206,10 +198,7 @@ void SettingPageWidget::setupUI()
 
     bgOpacitySlider_ = new QSlider(Qt::Horizontal, bgRow);
     bgOpacitySlider_->setRange(0, 100);
-    {
-        QSettings s("AzurStudio", "AzurAgent");
-        bgOpacitySlider_->setValue(s.value("bgOpacity", 25).toInt());
-    }
+    bgOpacitySlider_->setValue(AppSettings::bgOpacity());
     bgOpacitySlider_->setStyleSheet(
         "QSlider::groove:horizontal {"
         "  border-radius: 2px; height: 4px; background: rgba(0,0,0,0.12);"
@@ -232,8 +221,7 @@ void SettingPageWidget::setupUI()
     connect(bgOpacitySlider_, &QSlider::valueChanged, this, [this, bgValueLabel](int val) {
         bgValueLabel->setText(QString::number(val) + "%");
         emit bgOpacityChanged(val);
-        QSettings s("AzurStudio", "AzurAgent");
-        s.setValue("bgOpacity", val);
+        AppSettings::setBgOpacity(val);
     });
 
     bgRowLayout->addWidget(bgLabel);
@@ -247,24 +235,22 @@ void SettingPageWidget::setupUI()
 void SettingPageWidget::loadSettings()
 {
     qDebug() << "[SETTING] loadSettings";
-    QSettings settings("AzurStudio", "AzurAgent");
-    apiKeyEdit_->setText(settings.value("apiKey").toString());
-    baseUrlEdit_->setText(settings.value("baseUrl", "https://api.deepseek.com").toString());
-    recentModels_ = settings.value("recentModels").toStringList();
+    apiKeyEdit_->setText(AppSettings::apiKey());
+    baseUrlEdit_->setText(AppSettings::baseUrl());
+    recentModels_ = AppSettings::recentModels();
     for (const QString &model : recentModels_) {
         if (!model.isEmpty() && modelComboBox_->findText(model) == -1) {
             modelComboBox_->addItem(model);
         }
     }
-    modelComboBox_->setCurrentText(settings.value("model", "deepseek-v4-flash").toString());
+    modelComboBox_->setCurrentText(AppSettings::model());
 }
 
 void SettingPageWidget::saveSettings()
 {
     qDebug() << "[SETTING] saveSettings";
-    QSettings settings("AzurStudio", "AzurAgent");
-    settings.setValue("apiKey", apiKeyEdit_->text());
-    settings.setValue("baseUrl", baseUrlEdit_->text().trimmed());
-    settings.setValue("model", modelComboBox_->currentText());
-    settings.setValue("recentModels", recentModels_);
+    AppSettings::setApiKey(apiKeyEdit_->text());
+    AppSettings::setBaseUrl(baseUrlEdit_->text().trimmed());
+    AppSettings::setModel(modelComboBox_->currentText());
+    AppSettings::setRecentModels(recentModels_);
 }

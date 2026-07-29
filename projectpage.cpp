@@ -5,6 +5,8 @@
 #include "markdownrenderer.h"
 #include "messagebubblewidget.h"
 #include "promptloader.h"
+#include "confirmdialogs.h"
+#include "appsettings.h"
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -26,7 +28,6 @@
 #include <QDesktopServices>
 #include <QUrl>
 #include <QRegularExpression>
-#include <QSettings>
 #include <QPropertyAnimation>
 #include <QEasingCurve>
 #include <QGraphicsOpacityEffect>
@@ -45,7 +46,6 @@
 #include <ElaIcon.h>
 #include <ElaScrollPageArea.h>
 #include <ElaMessageBar.h>
-#include <ElaContentDialog.h>
 
 // ==================== 构造 / 析构 ====================
 ProjectPage::ProjectPage(AgentEngine *engine, QWidget *parent)
@@ -78,40 +78,7 @@ ProjectPage::ProjectPage(AgentEngine *engine, QWidget *parent)
     // 写操作确认弹窗
     connect(engine_, &AgentEngine::writeConfirmationRequired,
             this, [this](const QStringList &diffList) {
-        ElaContentDialog dlg(this);
-        dlg.setWindowTitle("修改确认");
-
-        QWidget *centralWidget = new QWidget(&dlg);
-        QVBoxLayout *centralLayout = new QVBoxLayout(centralWidget);
-        centralLayout->setContentsMargins(0, 0, 0, 0);
-        centralLayout->setSpacing(10);
-
-        ElaText *infoLabel = new ElaText(
-            QString("AI 请求对以下 %1 个文件进行修改：").arg(diffList.size()), centralWidget);
-        infoLabel->setTextStyle(ElaTextType::Body);
-        QFont infoFont = infoLabel->font();
-        infoFont.setBold(true);
-        infoLabel->setFont(infoFont);
-        centralLayout->addWidget(infoLabel);
-
-        QTextBrowser *diffBrowser = new QTextBrowser(centralWidget);
-        diffBrowser->setReadOnly(true);
-        diffBrowser->setFrameShape(QFrame::NoFrame);
-        diffBrowser->setStyleSheet(
-            "QTextBrowser { background: #1e1e1e; color: #d4d4d4; "
-            "font-family: 'Consolas', monospace; font-size: 13px; "
-            "padding: 12px; border-radius: 8px; }");
-        diffBrowser->setPlainText(diffList.join("\n\n--------------------\n\n"));
-        centralLayout->addWidget(diffBrowser, 1);
-
-        dlg.setCentralWidget(centralWidget);
-        dlg.setLeftButtonText("拒绝修改");
-        dlg.setRightButtonText("接受修改");
-
-        connect(&dlg, &ElaContentDialog::leftButtonClicked, &dlg, &QDialog::reject);
-        connect(&dlg, &ElaContentDialog::rightButtonClicked, &dlg, &QDialog::accept);
-
-        const bool accepted = (dlg.exec() == QDialog::Accepted);
+        const bool accepted = ConfirmDialogs::confirmWriteOperations(this, diffList);
         engine_->confirmWrite(accepted);
     });
 
@@ -482,9 +449,8 @@ void ProjectPage::togglePanel(bool isLeft)
 
 void ProjectPage::restorePanelCollapseState()
 {
-    QSettings settings("AzurStudio", "AzurAgent");
-    leftPanelCollapsed_ = settings.value("projectLeftPanelCollapsed", false).toBool();
-    rightPanelCollapsed_ = settings.value("projectRightPanelCollapsed", false).toBool();
+    leftPanelCollapsed_ = AppSettings::projectLeftPanelCollapsed();
+    rightPanelCollapsed_ = AppSettings::projectRightPanelCollapsed();
 
     auto applyState = [](QWidget *panel, QGraphicsOpacityEffect *effect, bool collapsed, int expandedWidth) {
         if (!panel) return;
@@ -514,9 +480,8 @@ void ProjectPage::restorePanelCollapseState()
 
 void ProjectPage::savePanelCollapseState()
 {
-    QSettings settings("AzurStudio", "AzurAgent");
-    settings.setValue("projectLeftPanelCollapsed", leftPanelCollapsed_);
-    settings.setValue("projectRightPanelCollapsed", rightPanelCollapsed_);
+    AppSettings::setProjectLeftPanelCollapsed(leftPanelCollapsed_);
+    AppSettings::setProjectRightPanelCollapsed(rightPanelCollapsed_);
 }
 
 // ==================== 消息气泡 ====================
@@ -563,11 +528,10 @@ void ProjectPage::onSendClicked()
 {
     if (isWaitingResponse_) return;
 
-    // 从 QSettings 读取 API 配置
-    QSettings settings("AzurStudio", "AzurAgent");
-    const QString apiKey = settings.value("apiKey").toString().trimmed();
-    const QString baseUrl = settings.value("baseUrl", "https://api.deepseek.com").toString().trimmed();
-    const QString model = settings.value("model", "deepseek-v4-flash").toString().trimmed();
+    // 读取 API 配置
+    const QString apiKey = AppSettings::apiKey();
+    const QString baseUrl = AppSettings::baseUrl();
+    const QString model = AppSettings::model();
 
     if (apiKey.isEmpty()) {
         ElaMessageBar::warning(ElaMessageBarType::TopRight, "提示", "请先在设置中填写 API Key", 3000);
@@ -587,7 +551,7 @@ void ProjectPage::onSendClicked()
     if (text.isEmpty()) return;
 
     // 同步"Agent 权限"设置（每次确认 / 自动执行）到引擎
-    engine_->setAutoExecute(settings.value("agentPermission", 0).toInt() == 1);
+    engine_->setAutoExecute(AppSettings::agentPermission() == 1);
 
     appendMessage(text, true);
     inputEdit_->clear();
