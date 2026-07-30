@@ -11,7 +11,7 @@ endif()
 find_package(Qt6 6.5 REQUIRED COMPONENTS Core Widgets Network)
 qt_standard_project_setup()
 
-# ============ 1. 使用本地预编译的 ElaWidgetTools ============
+# ============ ElaWidgetTools 预编译库 ============
 add_library(Ela::Widgets SHARED IMPORTED)
 set_target_properties(Ela::Widgets PROPERTIES
     INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_SOURCE_DIR}/lib/ElaWidgetTools/include"
@@ -19,59 +19,25 @@ set_target_properties(Ela::Widgets PROPERTIES
     IMPORTED_LOCATION "${CMAKE_SOURCE_DIR}/lib/ElaWidgetTools/bin/ElaWidgetTools.dll"
 )
 
-# ============ 2. 创建可执行目标 ============
-qt_add_executable(agent_
-    WIN32 MACOSX_BUNDLE
-    main.cpp
-    mainwindow.cpp
-    mainwindow.h
-    chatpagewidget.cpp
-    chatpagewidget.h
-    settingpagewidget.cpp
-    settingpagewidget.h
-    ai_client.cpp
-    ai_client.h
-    conversationmanager.cpp
-    conversationmanager.h
-    tool_executor.cpp
-    tool_executor.h
-    projectsession.cpp
-    projectsession.h
-    agent_engine.cpp
-    agent_engine.h
-    projectpage.cpp
-    projectpage.h
-    activitypanel.cpp
-    activitypanel.h
-    markdownrenderer.cpp
-    markdownrenderer.h
-    promptloader.cpp
-    promptloader.h
-    messagebubblewidget.cpp
-    messagebubblewidget.h
-    project_analyzer.cpp
-    project_analyzer.h
-    projecthistorydialog.cpp
-    projecthistorydialog.h
-    projectconvdialog.cpp
-    projectconvdialog.h
-    projectconversationservice.cpp
-    projectconversationservice.h
-    modemanager.cpp
-    modemanager.h
-    confirmdialogs.cpp
-    confirmdialogs.h
-    uiconstants.h
-    appsettings.cpp
-    appsettings.h
-    app.qrc
-)
+# ============ 创建可执行目标 ============
+qt_add_executable(agent_ WIN32 MACOSX_BUNDLE)
 
-# ============ 3. 链接库 ============
 target_compile_definitions(agent_ PRIVATE
-    RESOURCES_DIR="${CMAKE_SOURCE_DIR}/resources"
+    RESOURCES_DIR="${CMAKE_SOURCE_DIR}/app/resources"
 )
 
+# 以项目根为 include 基路径，所有 #include "module/file.h" 可正确解析
+target_include_directories(agent_ PRIVATE ${CMAKE_SOURCE_DIR})
+
+# ============ 各模块 ============
+add_subdirectory(core)
+add_subdirectory(data)
+add_subdirectory(ui)
+add_subdirectory(chat)
+add_subdirectory(project)
+add_subdirectory(app)
+
+# ============ 链接 ============
 target_link_libraries(agent_
     PRIVATE
         Qt::Core
@@ -80,7 +46,7 @@ target_link_libraries(agent_
         Ela::Widgets
 )
 
-# ============ 4. 安装规则 ============
+# ============ 安装规则 ============
 install(TARGETS agent_
     BUNDLE  DESTINATION .
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}

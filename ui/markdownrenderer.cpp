@@ -1,0 +1,112 @@
+#include "ui/markdownrenderer.h"
+
+#include <QTextBrowser>
+#include <QRegularExpression>
+#include <cmath>
+
+QString MarkdownRenderer::toHtml(const QString &md, QStringList *rawCodeBlocksOut)
+{
+    if (md.isEmpty()) return md;
+    if (rawCodeBlocksOut) rawCodeBlocksOut->clear();
+
+    QString html = md;
+
+    html.replace("&", "&amp;");
+    html.replace("<", "&lt;");
+    html.replace(">", "&gt;");
+
+    QStringList codeBlocks;
+    QRegularExpression codeBlockRx("```(\\w*)\\n([\\s\\S]*?)```");
+    qsizetype offset = 0;
+    while (true) {
+        QRegularExpressionMatch m = codeBlockRx.match(html, offset);
+        if (!m.hasMatch()) break;
+
+        QString lang = m.captured(1).trimmed();
+        QString escapedCode = m.captured(2);
+        while (escapedCode.endsWith('\n')) {
+            escapedCode.chop(1);
+        }
+
+        QString rawCode = escapedCode;
+        rawCode.replace("&amp;", "&");
+        rawCode.replace("&lt;", "<");
+        rawCode.replace("&gt;", ">");
+
+        QString bodyHtml = escapedCode;
+        if (lang.compare("diff", Qt::CaseInsensitive) == 0) {
+            const QStringList lines = escapedCode.split('\n');
+            QStringList colored;
+            colored.reserve(lines.size());
+            for (const QString &line : lines) {
+                if (line.startsWith('+') && !line.startsWith("+++")) {
+                    colored << QString("<span style=\"color:#3fb950;\">%1</span>").arg(line);
+                } else if (line.startsWith('-') && !line.startsWith("---")) {
+                    colored << QString("<span style=\"color:#f85149;\">%1</span>").arg(line);
+                } else {
+                    colored << line;
+                }
+            }
+            bodyHtml = colored.join('\n');
+        }
+
+        int idx = codeBlocks.size();
+        QString headerLabel = lang.isEmpty() ? QStringLiteral("text") : lang;
+        QString block = QString(
+            "<table width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" "
+            "style=\"background:#1e1e1e; border:1px solid #333333; margin:6px 0;\">"
+            "<tr>"
+            "<td style=\"padding:5px 10px; background:#2d2d2d;\">"
+            "<span style=\"color:#ff5f56;\">&#9679;</span> "
+            "<span style=\"color:#ffbd2e;\">&#9679;</span> "
+            "<span style=\"color:#27c93f;\">&#9679;</span>"
+            "<span style=\"color:#8a8a8a; font-size:11px;\">   %1</span>"
+            "</td>"
+            "<td align=\"right\" style=\"padding:5px 10px; background:#2d2d2d;\">"
+            "<a href=\"copycode:%2\" style=\"color:#4a9eff; font-size:11px; text-decoration:none;\">复制</a>"
+            "</td>"
+            "</tr>"
+            "<tr><td colspan=\"2\" style=\"padding:10px 12px;\">"
+            "<pre style=\"margin:0; color:#d4d4d4; font-family:'Cascadia Code','Consolas',monospace; "
+            "font-size:12.5px; white-space:pre-wrap;\"><code>%3</code></pre>"
+            "</td></tr>"
+            "</table>"
+            ).arg(headerLabel, QString::number(idx), bodyHtml);
+
+        codeBlocks.append(block);
+        if (rawCodeBlocksOut) {
+            rawCodeBlocksOut->append(rawCode);
+        }
+
+        QString placeholder = QStringLiteral("\x01" "CB%1\x01").arg(idx);
+        html.replace(m.capturedStart(), m.capturedLength(), placeholder);
+        offset = m.capturedStart() + placeholder.length();
+    }
+
+    html.replace(QRegularExpression("`([^`]+)`"),
+                 "<code style=\"background:#2d2d2d; color:#e6b673; padding:1px 5px; border-radius:3px;\">\\1</code>");
+    html.replace(QRegularExpression("\\*\\*(.+?)\\*\\*"), "<b>\\1</b>");
+    html.replace(QRegularExpression("__(.+?)__"), "<b>\\1</b>");
+    html.replace(QRegularExpression("\\*(.+?)\\*"), "<i>\\1</i>");
+    html.replace(QRegularExpression("_(.+?)_"), "<i>\\1</i>");
+    html.replace(QRegularExpression("\\[([^\\]]+)\\]\\(([^)]+)\\)"), "<a href=\"\\2\">\\1</a>");
+    html.replace("\n", "<br>");
+
+    for (int i = 0; i < codeBlocks.size(); ++i) {
+        html.replace(QString("\x01" "CB%1\x01").arg(i), codeBlocks[i]);
+    }
+
+    return "<div style='line-height:1.6;'>" + html + "</div>";
+}
+
+void MarkdownRenderer::adjustTextBrowserHeight(QTextBrowser *browser)
+{
+    if (!browser) return;
+
+    const int fixedWidth = 380;
+    browser->document()->setTextWidth(fixedWidth);
+    browser->document()->setDocumentMargin(0);
+
+    int height = static_cast<int>(std::ceil(browser->document()->size().height()));
+    browser->setFixedHeight(height > 0 ? height + 1 : 0);
+}

@@ -15,44 +15,51 @@
 ```
 agent_/
 ├── CMakeLists.txt                  # 构建配置
-├── app.qrc                         # Qt 资源文件
 │
-├── main.cpp                        # 入口：日志钩子 + ElaApplication 初始化
+├── core/                           # AI 引擎层
+│   ├── ai_client.h/.cpp            # AI API 客户端（流式 + Function Calling）
+│   ├── agent_engine.h/.cpp         # Agent 循环引擎（Chat/Project 共用同一实例）
+│   ├── tool_executor.h/.cpp        # 文件操作 + 命令执行工具执行器
+│   ├── git_executor.h/.cpp         # Git 集成工具（status/diff/log/commit/branch）
+│   ├── contextpolicy.h/.cpp        # ★ 上下文裁剪策略（消除重复的 trim 逻辑）
+│   └── promptloader.h/.cpp         # System Prompt 构建器
 │
-├── mainwindow.h/.cpp               # UI 主框架：导航、AppBar、Chat 模式的发送逻辑
-├── modemanager.h/.cpp              # Chat/Project 双模式切换与项目状态管理（从 MainWindow 解耦）
+├── data/                           # 数据持久层
+│   ├── conversationmanager.h/.cpp  # 对话管理（创建/保存/加载/删除）
+│   ├── projectconversationservice.h/.cpp # 项目对话服务层
+│   └── appsettings.h/.cpp          # ★ 全项目唯一的 QSettings 读写入口
 │
-├── chatpagewidget.h/.cpp           # 聊天模式页面
-├── messagebubblewidget.h/.cpp      # 消息气泡组件（用户/AI 通用）
-├── markdownrenderer.h/.cpp         # Markdown → HTML 渲染器
+├── ui/                             # 通用 UI 组件
+│   ├── messagebubblewidget.h/.cpp  # 消息气泡组件（用户/AI 通用）
+│   ├── conversationview.h/.cpp     # ★ 对话展示共享组件（消息列表+输入框+流式节流）
+│   ├── markdownrenderer.h/.cpp     # Markdown → HTML 渲染器
+│   └── uiconstants.h               # ★ 跨文件共用的 UI 常量（spinner 动画帧）
 │
-├── projectpage.h/.cpp              # 项目模式页面：三栏布局 + 发送逻辑
-├── activitypanel.h/.cpp            # AI 活动步骤展示面板
-├── project_analyzer.h/.cpp         # 项目索引分析器
-├── projectsession.h/.cpp           # 项目会话持久化（.azur/project.json）
+├── chat/                           # 聊天模式
+│   └── chatpagewidget.h/.cpp       # 聊天模式页面
 │
-├── settingpagewidget.h/.cpp        # 设置页面（UI 控件，实际存储都走 AppSettings）
-├── conversationmanager.h/.cpp      # 对话管理（创建/保存/加载/删除）
-├── projectconversationservice.h/.cpp # 项目对话服务层
-├── projectconvdialog.h/.cpp        # 项目对话列表对话框
-├── projecthistorydialog.h/.cpp     # 项目历史记录对话框
+├── project/                        # 项目模式
+│   ├── projectpage.h/.cpp          # 项目模式页面：三栏布局 + 发送逻辑
+│   ├── project_analyzer.h/.cpp     # 项目索引分析器
+│   ├── projectsession.h/.cpp       # 项目会话持久化（.azur/project.json）
+│   ├── activitypanel.h/.cpp        # AI 活动步骤展示面板
+│   ├── confirmdialogs.h/.cpp       # ★ 写操作确认弹窗（Chat/Project 共用）
+│   └── projectconvdialog.h/.cpp    # 项目对话列表对话框
 │
-├── ai_client.h/.cpp                # AI API 客户端（流式 + Function Calling）
-├── agent_engine.h/.cpp             # Agent 循环引擎（Chat/Project 共用同一实例）
-├── tool_executor.h/.cpp            # 文件操作 + 命令执行工具执行器
-├── promptloader.h/.cpp             # System Prompt 构建器
+├── app/                            # 应用主框架
+│   ├── main.cpp                    # 入口：日志钩子 + ElaApplication 初始化
+│   ├── mainwindow.h/.cpp           # UI 主框架：导航、AppBar、Chat 模式的发送逻辑
+│   ├── modemanager.h/.cpp          # Chat/Project 双模式切换与项目状态管理
+│   ├── settingpagewidget.h/.cpp    # 设置页面（UI 控件，实际存储都走 AppSettings）
+│   ├── projecthistorydialog.h/.cpp # 项目历史记录对话框
+│   ├── app.qrc                     # Qt 资源文件
+│   ├── resources/                  # Prompt 资源文件
+│   │   ├── agent_core.md           # Agent 工作准则
+│   │   ├── enterprise_personality.md # 企业人格模型
+│   │   ├── enterprise_quotes.md    # 台词参考
+│   │   └── 碧蓝航线 企业.md         # 角色背景设定
+│   └── avatar/                     # 头像图片
 │
-├── confirmdialogs.h/.cpp           # ★ 写操作确认弹窗（Chat/Project 共用一份实现）
-├── ui_constants.h                  # ★ 跨文件共用的 UI 常量（目前是 spinner 动画帧）
-├── appsettings.h/.cpp              # ★ 全项目唯一的 QSettings 读写入口
-│
-├── resources/                      # Prompt 资源文件
-│   ├── agent_core.md               # Agent 工作准则
-│   ├── enterprise_personality.md   # 企业人格模型
-│   ├── enterprise_quotes.md        # 台词参考
-│   └── 碧蓝航线 企业.md             # 角色背景设定
-│
-├── avatar/                         # 头像图片
 ├── lib/ElaWidgetTools/             # 预编译的 ElaWidgetTools 库
 ├── build/                          # 构建输出
 ├── daily_log/                      # 运行日志
@@ -61,7 +68,7 @@ agent_/
     └── project_index.json          # 项目索引缓存 ★ 自动生成
 ```
 
-标 ★ 的三个文件（`confirmdialogs` / `ui_constants` / `appsettings`）是后来为了消除重复代码新增的公共模块，**不属于业务逻辑，只是被别的模块引用的工具层**，见「三、6」。
+标 ★ 的文件（`confirmdialogs` / `uiconstants` / `appsettings` / `contextpolicy` / `conversationview`）是为了消除重复代码新增的公共模块，**不属于独立业务逻辑，只被别的模块引用**，见「三、6」和「三、7」。
 
 ### 技术栈
 
@@ -124,7 +131,7 @@ agent_/
 
 ### 3.1 入口层
 
-#### `main.cpp` (70 行)
+#### `app/main.cpp` (70 行)
 
 程序入口。职责：
 
@@ -312,7 +319,7 @@ AI API 客户端，负责与 OpenAI/DeepSeek 兼容接口通信。
 
 文件操作与命令执行器，**所有写操作和命令执行都需要经过用户确认（除非设置了"自动执行"）**。
 
-**五个工具：**
+**十个工具：**
 | 工具 | 功能 | 是否需要确认 | 安全限制 |
 |------|------|------|----------|
 | `read_file` | 读取文本文件内容 | 否 | ≤300KB，跳过二进制，路径限制在工作区内 |
@@ -320,11 +327,16 @@ AI API 客户端，负责与 OpenAI/DeepSeek 兼容接口通信。
 | `write_file` | 创建/覆盖写入文件 | **是** | ≤1MB，自动创建父目录，路径限制在工作区内 |
 | `apply_patch` | 搜索-替换局部修改 | **是** | ≤20 个 patch/次，路径限制在工作区内 |
 | `run_command` | 在项目目录下执行终端命令 | **是** | 30s 超时，高危命令黑名单，**不受工作区路径限制**（命令内部可以访问任意路径，务必仔细看确认弹窗里的命令内容） |
+| `git_status` | 显示仓库状态（相当于 git status） | 否 | 仅读取，不修改 |
+| `git_diff` | 查看代码变更内容（相当于 git diff） | 否 | 返回按文件分组的 diff，最多 200 行 |
+| `git_log` | 查看提交历史（相当于 git log --oneline） | 否 | 可配置显示条数，最多 100 条 |
+| `git_commit` | 暂存所有变更并创建提交（git add -A && git commit） | **是** | 自动 `git add -A`，提交信息由 AI 生成 |
+| `git_branch` | 列出本地分支（相当于 git branch） | 否 | 仅读取，不创建或切换分支 |
 
 **安全设计：**
 - `resolveSafePath()` — 路径穿越防护，`read_file`/`write_file`/`apply_patch` 的目标路径必须在工作区目录内；**`run_command` 不走这个检查**，因为命令字符串本身无法做路径级别的限制，只能靠黑名单拦高危操作
 - `isBlacklistedCommand()` — 对 `rm`/`rmdir` 逐 token 拆解短选项簇检测（能识别 `-rf`、`-Rf`、`-irf` 等各种组合写法，不是简单的固定子串匹配）
-- `isWriteTool()` — 判断一个工具是否需要走确认流程，目前是 `write_file` / `apply_patch` / `run_command` 三个
+- `isWriteTool()` — 判断一个工具是否需要走确认流程，目前是 `write_file` / `apply_patch` / `run_command` / `git_commit` 四个
 
 **apply_patch 的匹配逻辑（`applyPatchesToContent()`）：**
 - 精确匹配失败后自动尝试 `findFuzzyLineMatch()`（忽略行首尾空白）
@@ -336,17 +348,35 @@ AI API 客户端，负责与 OpenAI/DeepSeek 兼容接口通信。
 - 基于 LCS 动态规划，正确计算插入/删除/保留行
 - 超过 400 万 dp cell 阈值时跳过（防卡顿），给摘要提示
 
+#### `contextpolicy.h/.cpp` (约 420 行)
+
+轻量级上下文裁剪策略类。**纯策略，不维护任何状态**，输入 `AgentEngine` 的消息历史，输出裁剪后的副本。
+
+**核心函数：**
+- `trim(messages, maxMessages, maxToolResults, maxTotalSize, protectedTurns, report)` — 静态函数，执行多阶段裁剪
+
+**裁剪策略：**
+1. **system 消息永久保护**，永不丢弃
+2. **最近的 N 轮对话**（user/assistant）受年龄保护（`protectedTurns` 参数控制，默认 15 轮）
+3. **tool 消息分级**：写操作/错误结果 = 高价值，命令执行 = 中价值，读操作 = 低价值（优先丢弃）
+4. **tool call 完整性保护**：如果 assistant（含 tool_calls）被保留，它所有的 tool 结果也必须保留，否则 API 会拒绝请求
+
+**诊断报告：**
+`ContextReport` 结构体记录裁剪前后的数量/大小/分类统计，供日志和 UI 展示。
+
+这个类目前被 `AgentEngine` 在每次 `sendRequest()` 时调用，防止 token 预算爆炸。属于 V3.5（上下文管理）的早期铺垫。
+
 ---
 
 ### 3.6 共用工具模块 ★
 
-这三个文件不承载业务逻辑，是这一轮为了消除重复代码单独抽出来的，**改跨模块共用的东西，先看这里有没有现成的，别急着复制粘贴**。
+这些文件不承载独立业务逻辑，是这一轮为了消除重复代码单独抽出来的，**改跨模块共用的东西，先看这里有没有现成的，别急着复制粘贴**。
 
 #### `confirmdialogs.h/.cpp` (约 60 行)
 
 `ConfirmDialogs::confirmWriteOperations(parent, diffList)` — 展示写操作/命令执行的 diff 预览弹窗，返回用户是否接受。`mainwindow.cpp`（Chat 模式）和 `projectpage.cpp`（Project 模式）都调用它，不再各写一份。**要改确认弹窗的样式、文案、交互（比如加个"总是允许"按钮），改这一个文件就行，两个模式会同时生效。**
 
-#### `ui_constants.h`
+#### `ui/uiconstants.h`
 
 目前只有一个常量：`UiConstants::kSpinnerFrames`，Agent"思考中/执行中"用的旋转动画帧（盲文字符）。`activitypanel.cpp` / `chatpagewidget.cpp` / `messagebubblewidget.cpp` 都引用它。C++17 inline 变量，直接在头文件里定义，多个 .cpp 包含不会报重复定义。
 
@@ -373,6 +403,23 @@ AI API 客户端，负责与 OpenAI/DeepSeek 兼容接口通信。
 ---
 
 ### 3.7 其它 UI 组件
+
+#### `conversationview.h/.cpp` (约 400 行)
+
+聊天消息展示区域的**共享组件**：消息气泡列表 + 输入框 + 发送/停止按钮 + 流式内容节流刷新。
+
+被 `ChatPageWidget` 和 `ProjectPage` 共同持有，取代了原来两边各写一份的 `appendMessage` / `clearChatDisplay` / `onChunkReceived` / `flushAiContent` / `setInputEnabled` 等逻辑（约 150 行结构性重复代码）。
+
+**设计原则：** 只负责「展示」，不知道 `AgentEngine`，不知道自己是 Chat 模式还是 Project 模式。发送按钮/回车键只会发出 `sendRequested` 信号，是否调用引擎、要不要做跨模式检查等业务逻辑由外层决定。
+
+**关键特性：**
+- 流式输出 50ms 节流定时器，避免逐 token 触发重排版
+- 支持设置自定义按钮尺寸和输入框高度（Chat/Project 布局不同）
+- 自适应滚动到底部
+- `flushPendingContent()` — 停止节流并立即刷新，确保回复/错误时不会丢最后一小段
+- 发出 `viewportResized` / `firstChunkOfResponse` 信号供外层（如 Chat 模式）做背景适配和步骤指示器更新
+
+> 页面特有的东西不在这里：Chat 模式的步骤指示器（气泡内 spinner）由 ChatPageWidget 自行叠加；项目模式的外部 ActivityPanel 也独立管理。
 
 #### `messagebubblewidget.h/.cpp` (约 350 行)
 
@@ -505,6 +552,12 @@ Chat 模式和 Project 模式共享同一个 `AgentEngine` 实例，传入不同
 
 首次打开项目全量扫描并缓存到 `.azur/project_index.json`；再次打开对比每个已收录文件的 `lastModified`。**已知局限：新增文件不会触发重建**，见「三、8」。
 
+### 6. ConversationView — 消除 Chat/Project 的消息展示重复代码
+
+`ChatPageWidget` 和 `ProjectPage` 原来各自维护一份几乎一样的 `appendMessage()` / `onChunkReceived()` / 流式节流 / 输入框控制逻辑（约 150 行重复代码）。
+
+现在抽出了 `ConversationView` 共享组件，两边各自持有实例，只保留各自特有的逻辑（Chat 模式的气泡内步骤指示器、Project 模式的与 ActivityPanel 联动）。设计原则是「只负责展示，不接触业务逻辑」，发送按钮只管发信号，要不要真的调用 `AgentEngine` 由外层决定。
+
 ---
 
 ## 六、构建与运行
@@ -542,14 +595,16 @@ agent_/daily_log/azur_debug_YYYY-MM-DD.log
 | V2.1 | 项目索引（ProjectAnalyzer） | ✅ 已完成 |
 | V2.5 | 命令执行（run_command） | ✅ 已完成 |
 | V2.6 | 安全加固：run_command 确认 / Agent权限接入 / 共享引擎抢占防护 / 重复代码消除 | ✅ **本次完成** |
-| V3.0 | Git 集成 + 代码解析（Tree-sitter） | ❌ 未开始 |
-| V3.5 | 上下文管理（ContextManager） | ❌ 未开始 |
+| V3.0 | Git 集成 | ✅ **已完成** |
+| V3.5 | Git 增强（create/checkout/merge）+ 代码解析（Tree-sitter） | ❌ 未开始 |
+| V3.5 | 上下文管理（ContextPolicy + ContextManager） | 🚧 **进行中**（ContextPolicy 已完成） |
 | V4.0 | 长期记忆 + 多 Agent 协作 | ❌ 未开始 |
 
 **已知待办（不是 bug，是明确还没做的事）：**
 1. `AppSettings::startupMode()` 目前只存不读——设置页选"启动后进入项目模式"不会真的在启动时生效，因为涉及 `ElaWindow` 的页面导航 API，需要先确认具体用哪个函数切换页面
 2. `ProjectAnalyzer::needsRebuild()` 检测不到新增文件（见「三、8」）
-3. `ChatPageWidget` 和 `ProjectPage` 之间仍有结构性重复（消息气泡渲染、流式输出节流、滚动到底部等逻辑两边各一份），值得抽一个共享的"对话展示"组件，但这是个大重构，还没做
+3. ~~`ChatPageWidget` 和 `ProjectPage` 之间仍有结构性重复（消息气泡渲染、流式输出节流、滚动到底部等逻辑两边各一份），值得抽一个共享的"对话展示"组件，但这是个大重构，还没做~~
+   ✅ **已解决**：`ConversationView` 组件抽离完成，两边共用同一份实现（见「三、7」）
 
 ---
 
@@ -563,11 +618,13 @@ MainWindow (ElaWindow)
   ├── owns → ConversationManager (2: Chat + Project)
   ├── owns → ProjectConversationService (1)
   ├── owns → ChatPageWidget (1)
+  │     ├── uses → ConversationView (1, 共用消息展示)
   │     └── uses → MessageBubbleWidget (N) → MarkdownRenderer (静态)
   ├── owns → ProjectPage (1)
   │     ├── uses → AgentEngine (1, 与 MainWindow 共享)
   │     ├── uses → ProjectAnalyzer / ToolExecutor (静态)
   │     ├── owns → ActivityPanel (1)
+  │     ├── uses → ConversationView (1, 共用消息展示)
   │     └── uses → MessageBubbleWidget (N)
   ├── owns → SettingPageWidget (1)
   └── uses → ConfirmDialogs / AppSettings (静态/命名空间函数，无实例)
@@ -578,7 +635,8 @@ ModeManager
 
 AgentEngine
   ├── owns → DeepSeekClient (1, 外部传入)
-  └── uses → ToolExecutor (静态)
+  ├── uses → ToolExecutor (静态)
+  └── uses → ContextPolicy (静态策略，消息发送前 trim)
 
 任何模块
   └── uses → AppSettings (命名空间函数，内部唯一持有真正的 QSettings)
@@ -602,7 +660,7 @@ AgentEngine
 | Chat 模式和 Project 模式互相打断（一边发消息把另一边的回复打断了） | `agent_engine.h` 的 `isBusy()` + `mainwindow.cpp`/`projectpage.cpp` 里 `onSendClicked()` 开头的忙碌检查 |
 | 输入框在 AI 回复期间没被禁用，能重复发送 | `projectpage.cpp` 的 `onSendClicked()` 结尾要有 `setInputEnabled(false)`；`mainwindow.cpp` 是靠 `isWaitingResponse_` |
 | 取消请求后无法再发送新消息 | `mainwindow.cpp` 里 `cancelRequested` 的 lambda，检查 `isWaitingResponse_` 有没有被重置为 `false` |
-| Spinner 动画样式想改 | `ui_constants.h`（`kSpinnerFrames` 常量），改这一处全项目生效 |
+| Spinner 动画样式想改 | `ui/uiconstants.h`（`kSpinnerFrames` 常量），改这一处全项目生效 |
 | 项目文件树 / 索引没更新 | `project_analyzer.cpp` 的 `needsRebuild()`（已知不检测新增文件）→ `projectpage.cpp` 的 `rebuildIndex()` |
 | 活动面板（右侧步骤记录）内容堆积/不清空 | `projectpage.cpp` 的 `restoreConversation()` 有没有调用 `activityPanel_->clear()` |
 | 对话历史丢失 / 保存不对 | Chat 走 `conversationmanager.cpp`；Project 走 `projectconversationservice.cpp` + `modemanager.cpp` 的 `saveConversation()`/`saveEntry()` |
@@ -611,7 +669,9 @@ AgentEngine
 | Markdown 渲染样式不对（代码块/表格/加粗等） | `markdownrenderer.cpp` |
 | 消息气泡样式/头像不对 | `messagebubblewidget.cpp` |
 | 模式切换（Chat ↔ Project）逻辑不对 | `modemanager.cpp` |
-| 界面重复代码想复用 | 先看 `confirmdialogs.h` / `ui_constants.h` / `appsettings.h` 里有没有现成的，见「三、6」 |
+| Chat/Project 的消息展示（气泡列表、流式刷新、输入框）行为不一致 | `ui/conversationview.h/.cpp` — 两者共用的消息展示组件，见「三、7」 |
+| AI 回复占用 token 过多，或消息历史太长导致 API 报错 | `core/contextpolicy.h/.cpp` — 上下文裁剪策略，调整 `maxMessages` / `maxTotalSize` 等参数 |
+| 界面重复代码想复用 | 先看 `project/confirmdialogs.h` / `ui/uiconstants.h` / `data/appsettings.h` / `ui/conversationview.h` / `core/contextpolicy.h` 里有没有现成的，见「三、6」和「三、7」 |
 
 ---
 
@@ -634,7 +694,7 @@ token 预算有限。索引只保存"骨架信息"（语言、框架、类名、
 
 ### Q: 为什么改了 `.cpp`/`.h` 才需要重新编译，改 `resources/` 下的 md 文件不用？
 
-简单说：会被"编译"进程序内部的东西（源码），改了要重新编译；程序运行时从磁盘读取的外部文件（`resources/*.md`、`avatar/*.png`），改了直接生效，不用重新编译。
+简单说：会被"编译"进程序内部的东西（源码），改了要重新编译；程序运行时从磁盘读取的外部文件（`app/resources/*.md`、`app/avatar/*.png`），改了直接生效，不用重新编译。
 
 ### Q: 有没有不需要纠结的问题？
 
@@ -643,5 +703,5 @@ token 预算有限。索引只保存"骨架信息"（语言、框架、类名、
 
 ---
 
-> 最后更新：2026.7.29（同步了 run_command 确认机制、Agent权限接入、共享引擎抢占防护、重复代码消除等改动）
+> 最后更新：2026.8.5（新增 ContextPolicy 上下文裁剪 + ConversationView 对话展示共享组件）
 > 建议在 AI 读取此项目时，先读 PROJECT_README.md 的一~三节，遇到具体问题查第九节表格，再进对应源文件。
