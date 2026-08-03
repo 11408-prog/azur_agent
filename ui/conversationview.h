@@ -3,6 +3,8 @@
 
 #include <QWidget>
 #include <QString>
+#include <QLabel>
+#include <QTimer>
 
 class ElaScrollArea;
 class ElaPlainTextEdit;
@@ -63,6 +65,9 @@ public:
     ElaScrollArea *scrollArea() const { return messageScrollArea_; }
     QWidget *messageContainer() const { return messageContainer_; }
 
+    void setStatusBarVisible(bool visible);
+    void setStatusBarModelName(const QString &model);
+
 signals:
     // 用户点击发送按钮，或在输入框按下 Enter（非 Shift+Enter）
     void sendRequested(const QString &text);
@@ -77,6 +82,7 @@ protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
+    void updateStatusBarText();
     void setupUI();
     void scrollToBottom();
     void flushAiContent();
@@ -92,6 +98,11 @@ private:
     MessageBubbleWidget *currentAiBubble_ = nullptr;
     QString currentAiBuffer_;
     QTimer *throttleTimer_ = nullptr;
+
+    QLabel *statusBarLabel_=nullptr;
+    QTimer *statusBarTimer_=nullptr;
+    QString statusBarModelName_;
 };
+
 
 #endif // CONVERSATIONVIEW_H

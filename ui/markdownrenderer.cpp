@@ -40,9 +40,9 @@ QString MarkdownRenderer::toHtml(const QString &md, QStringList *rawCodeBlocksOu
             colored.reserve(lines.size());
             for (const QString &line : lines) {
                 if (line.startsWith('+') && !line.startsWith("+++")) {
-                    colored << QString("<span style=\"color:#3fb950;\">%1</span>").arg(line);
+                    colored << QString("<span style=\"color:#5a9a5a;\">%1</span>").arg(line);
                 } else if (line.startsWith('-') && !line.startsWith("---")) {
-                    colored << QString("<span style=\"color:#f85149;\">%1</span>").arg(line);
+                    colored << QString("<span style=\"color:#d95555;\">%1</span>").arg(line);
                 } else {
                     colored << line;
                 }
@@ -52,27 +52,25 @@ QString MarkdownRenderer::toHtml(const QString &md, QStringList *rawCodeBlocksOu
 
         int idx = codeBlocks.size();
         QString headerLabel = lang.isEmpty() ? QStringLiteral("text") : lang;
+        // MODIFIED: 代码块改为暖色调暗底，与整体主题协调
         QString block = QString(
-            "<table width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" "
-            "style=\"background:#1e1e1e; border:1px solid #333333; margin:6px 0;\">"
-            "<tr>"
-            "<td style=\"padding:5px 10px; background:#2d2d2d;\">"
-            "<span style=\"color:#ff5f56;\">&#9679;</span> "
-            "<span style=\"color:#ffbd2e;\">&#9679;</span> "
-            "<span style=\"color:#27c93f;\">&#9679;</span>"
-            "<span style=\"color:#8a8a8a; font-size:11px;\">   %1</span>"
-            "</td>"
-            "<td align=\"right\" style=\"padding:5px 10px; background:#2d2d2d;\">"
-            "<a href=\"copycode:%2\" style=\"color:#4a9eff; font-size:11px; text-decoration:none;\">复制</a>"
-            "</td>"
-            "</tr>"
-            "<tr><td colspan=\"2\" style=\"padding:10px 12px;\">"
-            "<pre style=\"margin:0; color:#d4d4d4; font-family:'Cascadia Code','Consolas',monospace; "
-            "font-size:12.5px; white-space:pre-wrap;\"><code>%3</code></pre>"
-            "</td></tr>"
-            "</table>"
-            ).arg(headerLabel, QString::number(idx), bodyHtml);
-
+                            "<table width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" "
+                            "style=\"background:#232a38; border:1px solid rgba(255,255,255,0.08); "
+                            "border-radius:10px; margin:8px 0; overflow:hidden;\">"
+                            "<tr>"
+                            "<td style=\"padding:6px 14px; background:#171d29;\">"
+                            "<span style=\"color:#5a8ae6; font-size:11px; letter-spacing:0.5px;\">%1</span>"
+                            "</td>"
+                            "<td align=\"right\" style=\"padding:6px 14px; background:#171d29;\">"
+                            "<a href=\"copycode:%2\" style=\"color:#5a8ae6; font-size:11px; text-decoration:none;\">复制</a>"
+                            "</td>"
+                            "</tr>"
+                            "<tr><td colspan=\"2\" style=\"padding:12px 16px;\">"
+                            "<pre style=\"margin:0; color:#e2e8f0; font-family:'JetBrains Mono','Cascadia Code',monospace; "
+                            "font-size:13px; line-height:1.6; white-space:pre-wrap;\"><code>%3</code></pre>"
+                            "</td></tr>"
+                            "</table>"
+                            ).arg(headerLabel, QString::number(idx), bodyHtml);
         codeBlocks.append(block);
         if (rawCodeBlocksOut) {
             rawCodeBlocksOut->append(rawCode);
@@ -84,7 +82,7 @@ QString MarkdownRenderer::toHtml(const QString &md, QStringList *rawCodeBlocksOu
     }
 
     html.replace(QRegularExpression("`([^`]+)`"),
-                 "<code style=\"background:#2d2d2d; color:#e6b673; padding:1px 5px; border-radius:3px;\">\\1</code>");
+                 "<code style=\"background:#eff1f3; color:#24292e; padding:2px 6px; border-radius:4px; font-size:12.5px;\">\\1</code>");
     html.replace(QRegularExpression("\\*\\*(.+?)\\*\\*"), "<b>\\1</b>");
     html.replace(QRegularExpression("__(.+?)__"), "<b>\\1</b>");
     html.replace(QRegularExpression("\\*(.+?)\\*"), "<i>\\1</i>");

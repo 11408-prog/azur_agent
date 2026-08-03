@@ -8,8 +8,8 @@
 class QLabel;
 class QVBoxLayout;
 class QTextBrowser;
+class QFrame;
 class ElaText;
-class ElaScrollPageArea;
 class QTimer;
 
 class MessageBubbleWidget : public QWidget
@@ -56,7 +56,12 @@ private:
 
     bool isUser_;
     QLabel *avatar_;
-    ElaScrollPageArea *bubble_;
+    // 气泡容器：之前是 ElaScrollPageArea，改成普通 QFrame。
+    // 原因：ElaScrollPageArea 的背景色是从 ElaTheme 全局主题色板里读的，
+    // 同一个类的所有实例只能是同一个颜色——没法让"用户气泡"和"AI气泡"
+    // 分别显示不同颜色。QFrame + WA_StyledBackground 才能让每个实例的
+    // QSS 背景色真正生效。
+    QFrame *bubble_;
     QVBoxLayout *bubbleLayout_;
     QTextBrowser *contentBrowser_;
     ElaText *userText_;

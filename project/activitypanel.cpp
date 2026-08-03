@@ -21,14 +21,15 @@ ActivityPanel::ActivityPanel(QWidget *parent)
     scrollArea_->setWidgetResizable(true);
     scrollArea_->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     scrollArea_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    // MODIFIED: 滚动条改为半透明白色
     scrollArea_->setStyleSheet(
         "QScrollArea { background: transparent; }"
-        "QScrollBar:vertical { background: transparent; width: 6px; margin: 0; }"
-        "QScrollBar::handle:vertical { background: rgba(0,0,0,0.18); border-radius: 3px; min-height: 24px; }"
-        "QScrollBar::handle:vertical:hover { background: rgba(0,0,0,0.32); }"
+        "QScrollBar:vertical { background: transparent; width: 5px; margin: 0; }"
+        "QScrollBar::handle:vertical { background: rgba(120, 120, 130, 0.3); border-radius: 3px; min-height: 24px; }"
+        "QScrollBar::handle:vertical:hover { background: rgba(120, 120, 130, 0.5); }"
         "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
         "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }"
-    );
+        );
     scrollArea_->viewport()->setStyleSheet("background: transparent;");
 
     contentWidget_ = new QWidget();
@@ -37,7 +38,6 @@ ActivityPanel::ActivityPanel(QWidget *parent)
     layout_->setContentsMargins(0, 0, 0, 0);
     layout_->setSpacing(6);
 
-    // 底部弹簧，让条目从顶部开始排列
     spacer_ = new QWidget(contentWidget_);
     spacer_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     layout_->addWidget(spacer_);
@@ -49,7 +49,6 @@ ActivityPanel::ActivityPanel(QWidget *parent)
     spinnerTimer_->setInterval(200);
     connect(spinnerTimer_, &QTimer::timeout, this, [this]() {
         spinnerFrame_ = (spinnerFrame_ + 1) % UiConstants::kSpinnerFrames.size();
-        // 更新所有 Pending 条目的 spinner 图标
         for (int i = 0; i < rows_.size(); ++i) {
             if (i < entries_.size() && entries_[i].status == ActivityEntry::Pending) {
                 if (rows_[i].icon) {
@@ -62,10 +61,10 @@ ActivityPanel::ActivityPanel(QWidget *parent)
 
 void ActivityPanel::onStepChanged(const QString &text)
 {
-    if (text.startsWith(QStringLiteral("\u2713"))) { // ✓
+    if (text.startsWith(QStringLiteral("\u2713"))) {
         QString body = text.mid(1).trimmed();
         completeLastPending(body);
-    } else if (text.startsWith(QStringLiteral("\u2717"))) { // ✗
+    } else if (text.startsWith(QStringLiteral("\u2717"))) {
         QString body = text.mid(1).trimmed();
         failLastPending(body);
     } else {
@@ -79,7 +78,6 @@ void ActivityPanel::addPendingActivity(const QString &text)
     entry.status = ActivityEntry::Pending;
     entry.text = text;
 
-    // 创建行
     QWidget *row = new QWidget(contentWidget_);
     row->setStyleSheet("background: transparent;");
     QHBoxLayout *rowLayout = new QHBoxLayout(row);
@@ -88,18 +86,19 @@ void ActivityPanel::addPendingActivity(const QString &text)
 
     QLabel *iconLabel = new QLabel(UiConstants::kSpinnerFrames[spinnerFrame_], row);
     iconLabel->setFixedWidth(20);
-    iconLabel->setStyleSheet("color: #4a9eff; font-size: 12px; background: transparent;");
+    // MODIFIED: Pending 图标改为暖棕色调
+    iconLabel->setStyleSheet("color: #5a8ae6; font-size: 12px; background: transparent;");
     iconLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
 
     QLabel *textLabel = new QLabel(text, row);
-    textLabel->setStyleSheet("color: #555555; font-size: 12px; background: transparent;");
+    // MODIFIED: 文字改为暖灰色
+    textLabel->setStyleSheet("color: #4a4a5a; font-size: 12px; background: transparent;");
     textLabel->setWordWrap(true);
     textLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
 
     rowLayout->addWidget(iconLabel);
     rowLayout->addWidget(textLabel, 1);
 
-    // 插入到 spacer 之前
     layout_->insertWidget(layout_->count() - 1, row);
 
     entries_.append(entry);
@@ -108,7 +107,6 @@ void ActivityPanel::addPendingActivity(const QString &text)
     ar.text = textLabel;
     rows_.append(ar);
 
-    // 确保 spinner 在运行
     if (!spinnerTimer_->isActive()) {
         spinnerTimer_->start();
     }
@@ -118,7 +116,6 @@ void ActivityPanel::addPendingActivity(const QString &text)
 
 void ActivityPanel::completeLastPending(const QString &finalText)
 {
-    // 找到最后一个 Pending 条目
     for (int i = entries_.size() - 1; i >= 0; --i) {
         if (entries_[i].status == ActivityEntry::Pending) {
             entries_[i].status = ActivityEntry::Completed;
@@ -126,19 +123,20 @@ void ActivityPanel::completeLastPending(const QString &finalText)
 
             if (i < rows_.size()) {
                 if (rows_[i].icon) {
-                    rows_[i].icon->setText(QStringLiteral("\u2713")); // ✓
-                    rows_[i].icon->setStyleSheet("color: #3fb950; font-size: 12px; background: transparent;");
+                    rows_[i].icon->setText(QStringLiteral("\u2713"));
+                    // MODIFIED: 成功图标改为暖绿色
+                    rows_[i].icon->setStyleSheet("color: #7aaa7a; font-size: 12px; background: transparent;");
                 }
                 if (rows_[i].text) {
                     rows_[i].text->setText(finalText);
-                    rows_[i].text->setStyleSheet("color: #888888; font-size: 12px; background: transparent;");
+                    // MODIFIED: 完成文字改为浅暖灰
+                    rows_[i].text->setStyleSheet("color: #8a8a9a; font-size: 12px; background: transparent;");
                 }
             }
             break;
         }
     }
 
-    // 如果没有 Pending 条目了，停止 spinner
     bool hasPending = false;
     for (const auto &e : qAsConst(entries_)) {
         if (e.status == ActivityEntry::Pending) { hasPending = true; break; }
@@ -152,7 +150,6 @@ void ActivityPanel::completeLastPending(const QString &finalText)
 
 void ActivityPanel::failLastPending(const QString &finalText)
 {
-    // 找到最后一个 Pending 条目
     for (int i = entries_.size() - 1; i >= 0; --i) {
         if (entries_[i].status == ActivityEntry::Pending) {
             entries_[i].status = ActivityEntry::Failed;
@@ -160,19 +157,20 @@ void ActivityPanel::failLastPending(const QString &finalText)
 
             if (i < rows_.size()) {
                 if (rows_[i].icon) {
-                    rows_[i].icon->setText(QStringLiteral("\u2717")); // ✗
-                    rows_[i].icon->setStyleSheet("color: #f85149; font-size: 12px; background: transparent;");
+                    rows_[i].icon->setText(QStringLiteral("\u2717"));
+                    // MODIFIED: 失败图标改为暖红色
+                    rows_[i].icon->setStyleSheet("color: #d95555; font-size: 12px; background: transparent;");
                 }
                 if (rows_[i].text) {
                     rows_[i].text->setText(finalText);
-                    rows_[i].text->setStyleSheet("color: #888888; font-size: 12px; background: transparent;");
+                    // MODIFIED: 失败文字改为浅暖灰
+                    rows_[i].text->setStyleSheet("color: #8a8a9a; font-size: 12px; background: transparent;");
                 }
             }
             break;
         }
     }
 
-    // 如果没有 Pending 条目了，停止 spinner
     bool hasPending = false;
     for (const auto &e : qAsConst(entries_)) {
         if (e.status == ActivityEntry::Pending) { hasPending = true; break; }
@@ -186,7 +184,6 @@ void ActivityPanel::failLastPending(const QString &finalText)
 
 void ActivityPanel::clear()
 {
-    // 移除所有行 widget（保留 spacer）
     for (auto &row : rows_) {
         if (row.icon) {
             QWidget *parentRow = row.icon->parentWidget();

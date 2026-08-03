@@ -95,16 +95,51 @@ void AgentEngine::sendRequest()
 
     emit contextTrimmed(report);
 
+    // 检测是否为本地模型（Ollama / vLLM / LM Studio 等）
+    // 本地模型对 role=system 的遵循度通常很差，需要把 system prompt 注入到第一个 user 消息中
+    const bool isLocalModel = baseUrl_.contains("localhost")
+                              || baseUrl_.contains("127.0.0.1")
+                              || baseUrl_.contains(":11434")   // Ollama 默认端口
+                              || baseUrl_.contains(":8000")   // vLLM 常见端口
+                              || baseUrl_.contains(":8080");  // 其它本地服务常见端口
+
     QJsonArray messages;
-    if (!systemPrompt_.isEmpty()) {
+
+    // 云端模型：正常走 system role
+    if (!systemPrompt_.isEmpty() && !isLocalModel) {
         QJsonObject systemMsg;
         systemMsg["role"] = "system";
         systemMsg["content"] = systemPrompt_;
         messages.append(systemMsg);
     }
+
+    // 组装消息列表
+    bool firstUserInjected = false;
     for (const QJsonObject &msg : trimmed) {
-        messages.append(msg);
+        QJsonObject m = msg;
+        // 本地模型：把 system prompt 拼接到第一个 user 消息前面
+        if (isLocalModel && !firstUserInjected && m["role"].toString() == "user") {
+            QString userContent = m["content"].toString();
+            m["content"] = systemPrompt_ + "\n\n---\n\n" + userContent;
+            firstUserInjected = true;
+        }
+        messages.append(m);
     }
+    //打印最终发给模型的消息
+    qDebug() << "[ENGINE] ====== 最终请求消息 ======";
+    qDebug() << "[ENGINE] 模型:" << model_;
+    qDebug() << "[ENGINE] 是否本地模型:" << isLocalModel;
+    for (int i = 0; i < messages.size(); ++i) {
+        QJsonObject m = messages[i].toObject();
+        QString role = m["role"].toString();
+        QString content = m["content"].toString();
+        // 只打印前300字符，避免日志爆炸
+        QString preview = content.left(300).replace('\n', ' ');
+        qDebug() << "[ENGINE] msg[" << i << "] role=" << role
+                 << "| content前300=" << preview
+                 << "| content长度=" << content.length();
+    }
+    qDebug() << "[ENGINE] ====== 请求消息结束 ======";
 
     client_->sendMessage(apiKey_, baseUrl_, model_, messages, tools_);
 }

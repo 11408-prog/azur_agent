@@ -3,6 +3,7 @@
 #include "ui/messagebubblewidget.h"
 #include "ui/uiconstants.h"
 #include "ui/conversationview.h"
+#include "data/appsettings.h"
 
 #include <ElaScrollArea.h>
 #include <ElaPlainTextEdit.h>
@@ -60,23 +61,15 @@ ChatPageWidget::ChatPageWidget(QWidget *parent)
 {
     setupUI();
 
-    // ---- 转发 ConversationView 的信号 ----
-    // 发送/回车 -> 先清空输入框，再对外仍然发出 sendClicked(text)（保持原有对外接口不变）。
-    // 这里之前是直接把 sendRequested 转发成 sendClicked 的信号到信号连接，
-    // 漏掉了清空输入框这一步——不管是点发送按钮还是按 Enter，发送后文本都会一直留在
-    // 输入框里（Project 模式的 onSendRequested 里有调用 clearInput()，Chat 模式这边漏掉了）。
     connect(conversationView_, &ConversationView::sendRequested, this, [this](const QString &text) {
         conversationView_->clearInput();
         emit sendClicked(text);
     });
-    // 停止按钮 -> 对外仍然是 cancelRequested()
     connect(conversationView_, &ConversationView::cancelRequested,
             this, &ChatPageWidget::cancelRequested);
-    // 消息区视口尺寸变化 -> 重新适配聊天背景图（原来在 eventFilter 里处理）
     connect(conversationView_, &ConversationView::viewportResized, this, [this]() {
         applyChatBg(currentBgOpacity_);
     });
-    // 收到本轮回复第一个流式片段 -> 更新步骤指示器文案
     connect(conversationView_, &ConversationView::firstChunkOfResponse, this, [this]() {
         if (MessageBubbleWidget *bubble = conversationView_->currentAiBubble()) {
             bubble->updateStep("正在生成回复...");
@@ -89,7 +82,6 @@ ChatPageWidget::~ChatPageWidget()
     if (requestElapsed_) delete requestElapsed_;
 }
 
-// ==================== UI 构建 ====================
 void ChatPageWidget::setupUI()
 {
     QHBoxLayout *mainLayout = new QHBoxLayout(this);
@@ -101,12 +93,25 @@ void ChatPageWidget::setupUI()
     sidebarWidget_->setMinimumWidth(0);
     sidebarWidget_->setMaximumWidth(kSidebarExpandedWidth);
     sidebarWidget_->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
+    // MODIFIED: 侧边栏改为半透明暖白毛玻璃
     sidebarWidget_->setStyleSheet(
         "QWidget {"
-        "   background-color: rgba(245, 245, 247, 0.9);"
-        "   border-right: 1px solid rgba(0,0,0,0.06);"
+        "   background-color: rgba(247, 249, 252, 0.88);"
+        "   border-right: 1px solid rgba(150, 170, 200, 0.25);"
         "}"
-        "QLabel { background: transparent; }"
+        "QLabel { background: transparent; color: #3a3a4a; }"
+        "QListWidget { background: transparent; border: none; color: #4a4a5a; }"
+        "QListWidget::item { padding: 8px 12px; border-radius: 8px; }"
+        "QListWidget::item:selected {"
+        "   background-color: rgba(15, 95, 240, 0.18);"
+        "   color: #2a2a3a;"
+        "}"
+        "QListWidget::item:hover { background-color: rgba(150, 170, 200, 0.15); }"
+        "QScrollBar:vertical { background: transparent; width: 6px; margin: 0; }"
+        "QScrollBar::handle:vertical { background: rgba(0,0,0,0.18); border-radius: 3px; min-height: 24px; }"
+        "QScrollBar::handle:vertical:hover { background: rgba(0,0,0,0.32); }"
+        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
+        "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }"
         );
     sidebarOpacityEffect_ = new QGraphicsOpacityEffect(sidebarWidget_);
     sidebarOpacityEffect_->setOpacity(1.0);
@@ -123,14 +128,14 @@ void ChatPageWidget::setupUI()
     sidebarLayout->setContentsMargins(12, 12, 12, 12);
     sidebarLayout->setSpacing(10);
 
-    // 顶部标题
     QHBoxLayout *topBar = new QHBoxLayout();
     topBar->setContentsMargins(0, 0, 0, 0);
 
     ElaText *historyLabel = new ElaText("历史记录", sidebarWidget_);
     historyLabel->setTextStyle(ElaTextType::Body);
     historyLabel->setTextPixelSize(15);
-    historyLabel->setStyleSheet("color: #1a1a1a;");
+    // MODIFIED: 标题颜色改为暖深棕
+    historyLabel->setStyleSheet("color: #2a2a3a;");
 
     QFont sideTitleFont = historyLabel->font();
     sideTitleFont.setBold(true);
@@ -141,7 +146,6 @@ void ChatPageWidget::setupUI()
     topBar->addStretch();
     sidebarLayout->addLayout(topBar);
 
-    // 新对话按钮
     ElaPushButton *newChatBtn = new ElaPushButton("+ 新对话", sidebarWidget_);
     newChatBtn->setFixedHeight(40);
     newChatBtn->setBorderRadius(8);
@@ -150,10 +154,10 @@ void ChatPageWidget::setupUI()
 
     ElaText *recentLabel = new ElaText("最近对话", sidebarWidget_);
     recentLabel->setTextStyle(ElaTextType::Caption);
-    recentLabel->setStyleSheet("color: #777; background: transparent;");
+    // MODIFIED: 副标题颜色改为暖灰
+    recentLabel->setStyleSheet("color: #8a8a9a; background: transparent;");
     sidebarLayout->addWidget(recentLabel);
 
-    // 会话列表
     historyList_ = new QListWidget(sidebarWidget_);
     historyList_->setFrameShape(QFrame::NoFrame);
     historyList_->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
@@ -162,7 +166,7 @@ void ChatPageWidget::setupUI()
     historyList_->setStyleSheet(
         "QListWidget { background: transparent; border: none; }"
         "QListWidget::item { padding: 8px 12px; border-radius: 6px; }"
-        "QListWidget::item:selected { background-color: rgba(0,120,212,0.2); }"
+        "QListWidget::item:selected { background-color: rgba(15, 95, 240, 0.18); }"
         "QListWidget::item:hover { background-color: rgba(0,0,0,0.05); }"
         "QScrollBar:vertical { background: transparent; width: 6px; margin: 0; }"
         "QScrollBar::handle:vertical { background: rgba(0,0,0,0.18); border-radius: 3px; min-height: 24px; }"
@@ -192,7 +196,7 @@ void ChatPageWidget::setupUI()
         } else if (chosen == renameAction) {
             bool ok;
             QString newTitle = QInputDialog::getText(this, "重命名", "请输入新标题:",
-                                                      QLineEdit::Normal, item->text(), &ok);
+                                                     QLineEdit::Normal, item->text(), &ok);
             if (ok && !newTitle.isEmpty()) {
                 emit conversationRenameRequested(id, newTitle);
             }
@@ -200,7 +204,6 @@ void ChatPageWidget::setupUI()
     });
     sidebarLayout->addWidget(historyList_, 1);
 
-    // 空状态标签
     historyEmptyLabel_ = new QLabel("暂无对话\n点击「+ 新对话」开始", sidebarWidget_);
     historyEmptyLabel_->setAlignment(Qt::AlignCenter);
     historyEmptyLabel_->setStyleSheet("color: #888; font-size: 14px;");
@@ -209,19 +212,21 @@ void ChatPageWidget::setupUI()
 
     mainLayout->addWidget(sidebarWidget_);
 
-    // ========== 右侧：聊天区域（消息展示 + 输入框，交给共享的 ConversationView） ==========
+    // ========== 右侧：聊天区域 ==========
     QWidget *chatArea = new QWidget(this);
     QVBoxLayout *chatLayout = new QVBoxLayout(chatArea);
-    chatLayout->setContentsMargins(20, 20, 20, 20);
-    chatLayout->setSpacing(12);
+    chatLayout->setContentsMargins(0, 0, 0, 0);
+    chatLayout->setSpacing(0);
 
     conversationView_ = new ConversationView(chatArea);
     chatLayout->addWidget(conversationView_, 1);
 
     mainLayout->addWidget(chatArea);
+
+    conversationView_->setStatusBarVisible(AppSettings::showStatusBar());
+    conversationView_->setStatusBarModelName(AppSettings::chatModel());
 }
 
-// ==================== 时间感知问候 ====================
 QString ChatPageWidget::timeBasedGreeting() const
 {
     const int hour = QTime::currentTime().hour();
@@ -240,13 +245,10 @@ QString ChatPageWidget::timeBasedGreeting() const
     return greeting + "，指挥官。";
 }
 
-// ==================== 添加消息气泡 ====================
 void ChatPageWidget::appendMessage(const QString &text, bool isUser, bool showStepIndicator)
 {
     MessageBubbleWidget *bubble = conversationView_->appendMessage(text, isUser);
 
-    // 步骤指示器是 Chat 模式独有的东西（Project 模式用外部 ActivityPanel），
-    // ConversationView 不知道这件事，这里拿到气泡指针后自己叠加。
     if (!isUser && showStepIndicator) {
         bubble->enableStepIndicator(true);
         if (!spinnerTimer_) {
@@ -260,13 +262,11 @@ void ChatPageWidget::appendMessage(const QString &text, bool isUser, bool showSt
     }
 }
 
-// ==================== 清空聊天显示 ====================
 void ChatPageWidget::clearChatDisplay()
 {
     conversationView_->clearChatDisplay();
 }
 
-// ==================== 恢复对话 ====================
 void ChatPageWidget::restoreConversation(const QJsonArray &messages)
 {
     clearChatDisplay();
@@ -281,14 +281,12 @@ void ChatPageWidget::restoreConversation(const QJsonArray &messages)
     }
 }
 
-// ==================== 显示问候语 ====================
 void ChatPageWidget::showGreeting()
 {
     clearChatDisplay();
     appendMessage(timeBasedGreeting(), false);
 }
 
-// ==================== 流式响应回调 ====================
 void ChatPageWidget::onChunkReceived(const QString &delta)
 {
     conversationView_->onChunkReceived(delta);
@@ -299,7 +297,6 @@ void ChatPageWidget::onResponseCompleted(const QString &fullText)
     MessageBubbleWidget *bubble = conversationView_->currentAiBubble();
     if (!bubble) return;
 
-    // 先刷出缓冲区中的剩余内容
     conversationView_->flushPendingContent();
 
     double elapsedSec = requestElapsed_ ? requestElapsed_->elapsed() / 1000.0 : 0.0;
@@ -319,7 +316,6 @@ void ChatPageWidget::onResponseError(const QString &errorMessage)
     bubble->setAiStreamingContent("请求失败: " + errorMessage);
 }
 
-// ==================== 步骤指示器 ====================
 void ChatPageWidget::onSpinnerTick()
 {
     if (MessageBubbleWidget *bubble = conversationView_->currentAiBubble()) {
@@ -343,7 +339,6 @@ void ChatPageWidget::finishAiStep(bool success, const QString &finalText)
     bubble->finishStep(success, finalText);
 }
 
-// ==================== 聊天背景 ====================
 void ChatPageWidget::applyChatBg(int opacityPercent)
 {
     currentBgOpacity_ = opacityPercent;
@@ -378,7 +373,18 @@ void ChatPageWidget::setBackgroundPixmap(const QPixmap &pixmap)
     bgPixmap_ = pixmap;
 }
 
-// ==================== 侧边栏 ====================
+void ChatPageWidget::clearChatBg()
+{
+    bgPixmap_ = QPixmap();
+    ElaScrollArea *scrollArea = conversationView_->scrollArea();
+    if (!scrollArea) return;
+    QPalette pal = scrollArea->viewport()->palette();
+    pal.setBrush(QPalette::Window, QBrush());
+    scrollArea->viewport()->setPalette(pal);
+    scrollArea->viewport()->setAutoFillBackground(false);
+    scrollArea->viewport()->update();
+}
+
 void ChatPageWidget::toggleSidebar()
 {
     if (!sidebarWidget_) return;
@@ -439,7 +445,6 @@ void ChatPageWidget::restoreSidebarState(bool collapsed)
     emit sidebarCollapsedChanged(collapsed);
 }
 
-// ==================== 会话列表 ====================
 void ChatPageWidget::refreshConversationList(const QJsonArray &meta, const QString &currentId)
 {
     currentConversationId_ = currentId;
@@ -470,7 +475,6 @@ void ChatPageWidget::setCurrentConversationId(const QString &id)
     currentConversationId_ = id;
 }
 
-// ==================== 输入控制 ====================
 void ChatPageWidget::setInputEnabled(bool enabled)
 {
     conversationView_->setInputEnabled(enabled);
@@ -486,13 +490,8 @@ void ChatPageWidget::cancelAiResponse()
 {
     MessageBubbleWidget *bubble = conversationView_->currentAiBubble();
     if (bubble) {
-        // 先把节流缓冲区里已经收到、但还没来得及显示的内容刷出来，
-        // 免得取消瞬间还有几个字没上屏
         conversationView_->flushPendingContent();
         finishAiStep(false, "✗ 已取消生成");
-        // 如果还没收到任何流式内容，气泡这时候还停留在"思考中 ⠋"的占位动画上，
-        // 必须显式给它设置一段明确的文字，否则 setAiStreamingContent 不会被调用，
-        // 动画会一直转下去，界面上就会永远卡在"思考中"，这正是用户看到的现象。
         bubble->setAiStreamingContent(QStringLiteral("（已取消生成）"));
     }
     clearAiState();

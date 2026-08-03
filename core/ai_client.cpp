@@ -64,8 +64,6 @@ void DeepSeekClient::testConnection(const QString &apiKey,const QString &baseUrl
     //连接finished信号并处理结果
     connect(reply, &QNetworkReply::finished, this, [this, reply]() {
         timeoutTimer_->stop();
-
-        // 如果超时已经处理过了，这里不再重复处理
         if (timeoutTriggered_) {
             reply->deleteLater();
             return;
@@ -81,10 +79,32 @@ void DeepSeekClient::testConnection(const QString &apiKey,const QString &baseUrl
             currentReply_ = nullptr;
         }
 
-        const bool success = (error == QNetworkReply::NoError);
-        const QString message = success ? "连接成功，服务可用"
-                                        : requestErrorMessage(error, statusCode, responseData, errorString);
-        emit connectionTested(success, message);
+        // 1. 网络错误
+        if (error != QNetworkReply::NoError) {
+            emit connectionTested(false, requestErrorMessage(error, statusCode, responseData, errorString));
+            return;
+        }
+
+        // 2. HTTP 状态码非 2xx 视为失败
+        if (statusCode < 200 || statusCode >= 300) {
+            const QString msg = requestErrorMessage(error, statusCode, responseData, errorString);
+            emit connectionTested(false, msg);
+            return;
+        }
+
+        // 3. 检查响应内容是否包含 "object" 字段且值为 "list"（OpenAI /models 标准格式）
+        QJsonDocument doc = QJsonDocument::fromJson(responseData);
+        if (doc.isObject() && doc.object().contains("object")) {
+            const QString objType = doc.object()["object"].toString();
+            if (objType == "list") {
+                emit connectionTested(true, "连接成功，网址可用");
+                return;
+            }
+        }
+
+        // 4. 对于非标准响应但状态码 200 的情况（例如某些代理），可降级为成功
+        // 但至少确保不是 404
+        emit connectionTested(true, "连接成功（响应格式非标准，但服务可访问）");
     });
 
 }
@@ -113,17 +133,17 @@ void DeepSeekClient::sendMessage(const QString &apiKey,const QString &baseUrl,co
     request.setHeader(QNetworkRequest::ContentTypeHeader,"application/json");
     request.setRawHeader("Authorization",("Bearer "+apiKey).toUtf8());
     //超时保护机制
-    timeoutTimer_->disconnect();
-    connect(timeoutTimer_,&QTimer::timeout,this,[this]()
-    {
-        if(!currentReply_)return ;
-        QNetworkReply *reply=currentReply_;
-        currentReply_=nullptr;
-        reply->abort();
-        reply->deleteLater();
-        emit errorOccurred("请求超时，已自动取消");
-    });
-    timeoutTimer_->start(40000);
+    //timeoutTimer_->disconnect();
+    //connect(timeoutTimer_,&QTimer::timeout,this,[this]()
+    //{
+    //    if(!currentReply_)return ;
+    //    QNetworkReply *reply=currentReply_;
+    //    currentReply_=nullptr;
+    //    reply->abort();
+    //    reply->deleteLater();
+    //    emit errorOccurred("请求超时，已自动取消");
+    //});
+    //timeoutTimer_->start(400000000);
     //发起post请求
     currentReply_=networkManager_->post(
         request,QJsonDocument(body).toJson(QJsonDocument::Compact)

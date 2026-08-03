@@ -43,6 +43,7 @@ agent_/
 │   ├── project_analyzer.h/.cpp     # 项目索引分析器
 │   ├── projectsession.h/.cpp       # 项目会话持久化（.azur/project.json）
 │   ├── activitypanel.h/.cpp        # AI 活动步骤展示面板
+│   ├── projecthistorydialog.h/.cpp # 项目历史记录对话框
 │   ├── confirmdialogs.h/.cpp       # ★ 写操作确认弹窗（Chat/Project 共用）
 │   └── projectconvdialog.h/.cpp    # 项目对话列表对话框
 │
@@ -51,12 +52,11 @@ agent_/
 │   ├── mainwindow.h/.cpp           # UI 主框架：导航、AppBar、Chat 模式的发送逻辑
 │   ├── modemanager.h/.cpp          # Chat/Project 双模式切换与项目状态管理
 │   ├── settingpagewidget.h/.cpp    # 设置页面（UI 控件，实际存储都走 AppSettings）
-│   ├── projecthistorydialog.h/.cpp # 项目历史记录对话框
 │   ├── app.qrc                     # Qt 资源文件
 │   ├── resources/                  # Prompt 资源文件
-│   │   ├── agent_core.md           # Agent 工作准则
-│   │   ├── enterprise_personality.md # 企业人格模型
-│   │   ├── enterprise_quotes.md    # 台词参考
+│   │   ├── full/                   # 完整版人格（云端模型推荐）：agent_core + 人格 + 台词三件套
+│   │   ├── lite/                   # 精简版人格（本地小模型推荐）
+│   │   ├── enterprise.md           # 旧版单文件人格（当前不再加载，待清理）
 │   │   └── 碧蓝航线 企业.md         # 角色背景设定
 │   └── avatar/                     # 头像图片
 │
@@ -386,13 +386,19 @@ AI API 客户端，负责与 OpenAI/DeepSeek 兼容接口通信。
 
 | 函数 | 对应设置 | 默认值 |
 |------|----------|--------|
-| `apiKey()` / `setApiKey()` | API Key | 空 |
-| `baseUrl()` / `setBaseUrl()` | Base URL | `https://api.deepseek.com` |
-| `model()` / `setModel()` | 模型名称 | `deepseek-v4-flash` |
+| `chatApiKey()` / `setChatApiKey()` | 聊天模式 API Key | 空 |
+| `chatBaseUrl()` / `setChatBaseUrl()` | 聊天模式 Base URL | `https://api.deepseek.com` |
+| `chatModel()` / `setChatModel()` | 聊天模式模型名称 | `deepseek-v4-flash` |
+| `projectApiKey()` / `setProjectApiKey()` | 项目模式 API Key | 空 |
+| `projectBaseUrl()` / `setProjectBaseUrl()` | 项目模式 Base URL | `https://api.deepseek.com` |
+| `projectModel()` / `setProjectModel()` | 项目模式模型名称 | `deepseek-v4-flash` |
 | `recentModels()` / `setRecentModels()` | 最近使用的模型列表 | 空 |
 | `agentPermission()` / `setAgentPermission()` | Agent 权限：0=每次确认，1=自动执行 | 0 |
 | `startupMode()` / `setStartupMode()` | 默认模式：0=聊天，1=项目 | 0（**目前只存不读，见「七、待办」**） |
+| `chatPromptMode()` / `setChatPromptMode()` | 聊天人格模式：0=精简（本地模型推荐），1=完整（云端模型推荐） | 0 |
 | `bgOpacity()` / `setBgOpacity()` | 聊天背景透明度 | 25 |
+| `chatBgEnabled()` / `setChatBgEnabled()` | 显示聊天背景（开关，默认关，未启用时透明度无效） | false |
+| `showStatusBar()` / `setShowStatusBar()` | 显示底部状态栏 | `true` |
 | `projectLeftPanelCollapsed()` / `Right...()` | 项目模式左右面板折叠状态 | false |
 | `lastProjectPath()` / `setLastProjectPath()` | 上次打开的项目路径 | 空 |
 | `projectHistory()` / `setProjectHistory()` | 最近项目列表（JSON 数组，最多10条） | 空数组 |
@@ -417,6 +423,7 @@ AI API 客户端，负责与 OpenAI/DeepSeek 兼容接口通信。
 - 支持设置自定义按钮尺寸和输入框高度（Chat/Project 布局不同）
 - 自适应滚动到底部
 - `flushPendingContent()` — 停止节流并立即刷新，确保回复/错误时不会丢最后一小段
+- 底部状态栏：显示当前模型名与实时时间，可通过设置开关显隐
 - 发出 `viewportResized` / `firstChunkOfResponse` 信号供外层（如 Chat 模式）做背景适配和步骤指示器更新
 
 > 页面特有的东西不在这里：Chat 模式的步骤指示器（气泡内 spinner）由 ChatPageWidget 自行叠加；项目模式的外部 ActivityPanel 也独立管理。
@@ -429,13 +436,23 @@ AI API 客户端，负责与 OpenAI/DeepSeek 兼容接口通信。
 
 AI 活动步骤展示面板，实时显示 Agent 当前执行状态（Pending 转圈 / Completed ✓ / Failed ✗）。切换项目/对话时会被 `ProjectPage::restoreConversation()` 调用 `clear()` 清空。
 
-#### `markdownrenderer.h/.cpp` (112 行)
+#### `markdownrenderer.h/.cpp`
 
 轻量级 Markdown → HTML 转换器：代码块、行内代码、加粗/斜体、链接、Diff 语法高亮。
 
-#### `settingpagewidget.h/.cpp` (约 255 行)
+- 代码块采用浅色背景（`#f6f8fa`）+ 灰色头部，类似 GitHub 风格
+- 行内代码用浅灰底深灰字
+- Diff 语法高亮：`+` 行绿色、`-` 行红色
 
-设置页面的 UI 控件（输入框/下拉框/滑块），**本身不直接持有配置状态**，所有读写都转发给 `AppSettings`。
+#### `settingpagewidget.h/.cpp`
+
+设置页面，采用卡片式布局（`QFrame` 圆角卡片），分为四个分组：
+- **聊天模式连接**：API Key / Base URL / 模型名称（聊天专用）
+- **项目模式连接**：API Key / Base URL / 模型名称（项目专用）
+- **Agent 行为**：默认模式 / Agent 权限 / 聊天人格模式（精简 / 完整）
+- **界面与外观**：显示聊天背景开关（默认关）/ 聊天背景透明度 / 底部状态栏显隐开关
+
+**本身不直接持有配置状态**，所有读写都转发给 `AppSettings`。
 
 #### `projecthistorydialog.h/.cpp` / `projectconvdialog.h/.cpp`
 
@@ -469,7 +486,8 @@ AI 活动步骤展示面板，实时显示 Agent 当前执行状态（Pending �
 
 #### `promptloader.h/.cpp` (36 行)
 
-拼接 `resources/agent_core.md` + `enterprise_personality.md` + `enterprise_quotes.md` 成完整 system prompt。
+- `buildSystemPrompt()` — 项目模式：拼接 `resources/full/` 下的 `agent_core.md` + `enterprise_personality.md` + `enterprise_quotes.md` 成完整 system prompt。
+- `buildChatSystemPrompt(style)` — 聊天模式：style=1 完整版（同项目模式三件套），style=0 精简版（`resources/lite/enterprise.md`），由设置项 `chatPromptMode` 控制；聊天不需要工具调用，精简版不加载 agent_core。
 
 ---
 
@@ -703,5 +721,5 @@ token 预算有限。索引只保存"骨架信息"（语言、框架、类名、
 
 ---
 
-> 最后更新：2026.8.5（新增 ContextPolicy 上下文裁剪 + ConversationView 对话展示共享组件）
-> 建议在 AI 读取此项目时，先读 PROJECT_README.md 的一~三节，遇到具体问题查第九节表格，再进对应源文件。
+> 最后更新：2026.8.2（新增双模型配置、设置页卡片化、底部状态栏、代码块浅色主题）（新增 ContextPolicy 上下文裁剪 + ConversationView 对话展示共享组件）
+> 建议在 AI 读取此项目时，先读本文件的一~三节，遇到具体问题查第九节表格，再进对应源文件。

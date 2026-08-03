@@ -53,6 +53,7 @@ public:
     // ---- 聊天背景 ----
     void applyChatBg(int opacityPercent);
     void setBackgroundPixmap(const QPixmap &pixmap);
+    void clearChatBg();
 
     // ---- 侧边栏 ----
     void toggleSidebar();
@@ -86,7 +87,7 @@ private:
 
     // ---- 侧边栏 ----
     QWidget *sidebarWidget_;
-    bool sidebarCollapsed_ = false;
+    bool sidebarCollapsed_ = true;
     QPropertyAnimation *sidebarAnimation_;
     QPropertyAnimation *sidebarOpacityAnimation_;
     QGraphicsOpacityEffect *sidebarOpacityEffect_;
@@ -109,6 +110,11 @@ private:
 
     // ---- 当前会话ID ----
     QString currentConversationId_;
+
+protected:
+    //void resizeEvent(QResizeEvent *event) override;
+private:
+    QWidget *chatArea_=nullptr;
 };
 
 #endif // CHATPAGEWIDGET_H

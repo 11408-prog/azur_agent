@@ -2,7 +2,7 @@
 #include "chat/chatpagewidget.h"
 #include "app/settingpagewidget.h"
 #include "core/promptloader.h"
-#include "app/projecthistorydialog.h"
+#include "project/projecthistorydialog.h"
 #include "project/projectconvdialog.h"
 #include "data/projectconversationservice.h"
 #include "project/confirmdialogs.h"
@@ -199,6 +199,18 @@ MainWindow::MainWindow(QWidget *parent)
     connect(settingsPageWidget_, &SettingPageWidget::bgOpacityChanged, this, [this](int val) {
         chatPageWidget_->applyChatBg(val);
     });
+    connect(settingsPageWidget_, &SettingPageWidget::chatBgVisibilityChanged, this, [this](bool enabled) {
+        if (enabled) {
+            QString bgPath = projectRoot() + "/app/avatar/bg.png";
+            QPixmap bgPixmap(bgPath);
+            if (!bgPixmap.isNull()) {
+                chatPageWidget_->setBackgroundPixmap(bgPixmap);
+                chatPageWidget_->applyChatBg(AppSettings::bgOpacity());
+            }
+        } else {
+            chatPageWidget_->clearChatBg();
+        }
+    });
     connect(settingsPageWidget_, &SettingPageWidget::connectionTestRequested, this, [this](const QString &apiKey, const QString &baseUrl) {
         client_->testConnection(apiKey, baseUrl);
     });
@@ -251,12 +263,12 @@ MainWindow::MainWindow(QWidget *parent)
     // 设置 ModeManager 的 projectPageWidget (需在 setupNavigation 之后)
     modeManager_->setProjectPageWidget(projectPageWidget_);
 
-    // ==================== 加载背景图（使用 QRC） ====================
+    // ==================== 加载背景图（设置开启时才加载） ====================
 
     {
         QString bgPath = projectRoot() + "/app/avatar/bg.png";
         QPixmap bgPixmap(bgPath);
-        if (!bgPixmap.isNull()) {
+        if (!bgPixmap.isNull() && AppSettings::chatBgEnabled()) {
             chatPageWidget_->setBackgroundPixmap(bgPixmap);
             chatPageWidget_->applyChatBg(AppSettings::bgOpacity());
         }
@@ -364,7 +376,7 @@ void MainWindow::setupNavigation()
     chatPage_ = new ElaScrollPage(this);
     chatPage_->setWindowTitle("对话");
     chatPage_->setTitleVisible(false);
-    chatPage_->addCentralWidget(chatPageWidget_, true, true, 0.5);
+    chatPage_->addCentralWidget(chatPageWidget_, true, true, 0);
 
     // 设置页面
     settingPage_ = new ElaScrollPage(this);
@@ -532,14 +544,14 @@ void MainWindow::onSendClicked()
     qDebug()<<"[MAINWIN] onSendClicked | isWaitingResponse_="<<isWaitingResponse_;
     const QString text = lastUserMessage_;
 
-    QString apiKey = settingsPageWidget_->apiKey();
+    QString apiKey = settingsPageWidget_->chatApiKey();
     if (apiKey.isEmpty()) {
         ElaMessageBar::warning(ElaMessageBarType::TopRight, "提示",
                                "请先在设置中填写 API Key", 3000);
         return;
     }
 
-    const QUrl baseUrl(settingsPageWidget_->baseUrl());
+    const QUrl baseUrl(settingsPageWidget_->chatBaseUrl());
     if (!baseUrl.isValid() || baseUrl.host().isEmpty()
         || (baseUrl.scheme() != "http" && baseUrl.scheme() != "https")) {
         ElaMessageBar::warning(ElaMessageBarType::TopRight, "提示",
@@ -547,7 +559,7 @@ void MainWindow::onSendClicked()
         return;
     }
 
-    if (settingsPageWidget_->modelName().isEmpty()) {
+    if (settingsPageWidget_->chatModelName().isEmpty()) {
         ElaMessageBar::warning(ElaMessageBarType::TopRight, "提示",
                                "请先在设置中填写模型名称", 3000);
         return;
@@ -579,7 +591,7 @@ void MainWindow::onSendClicked()
     chatPageWidget_->appendMessage(QString(), false, true);
 
     // 启动 AgentEngine
-    chatEngine_->start(apiKey, settingsPageWidget_->baseUrl(), settingsPageWidget_->modelName(),
+    chatEngine_->start(apiKey, settingsPageWidget_->chatBaseUrl(), settingsPageWidget_->chatModelName(),
                        messageHistory_, systemPrompt_, QJsonArray(), QString());
     chatPageWidget_->setInputEnabled(false);
     isWaitingResponse_ = true;
@@ -601,7 +613,7 @@ void MainWindow::onApiResponseCompleted(const QString &fullText)
 
     chatPageWidget_->onResponseCompleted(fullText);
 
-    settingsPageWidget_->rememberModel(settingsPageWidget_->modelName());
+    settingsPageWidget_->rememberModel(settingsPageWidget_->chatModelName());
     messageHistory_ = chatEngine_->messageHistory();
 
     // 自动生成标题
@@ -642,6 +654,8 @@ void MainWindow::onApiError(const QString &errorMessage)
 
 void MainWindow::loadConversation(const QString &id)
 {
+    qDebug() << "[MAINWIN] loadConversation | 切换前历史条数=" << messageHistory_.size()
+        << "| 目标id=" << id;
     if (id.isEmpty()) return;
     qDebug()<<"[MAINWIN] loadConversation | id="<<id;
 
@@ -665,6 +679,12 @@ void MainWindow::loadConversation(const QString &id)
 
     chatPageWidget_->refreshConversationList(
         conversationManager_->conversationsMeta(), currentConversationId_);
+
+    messageHistory_.clear();
+    for (const QJsonValue &val : messages) {
+        messageHistory_.append(val.toObject());
+    }
+    qDebug() << "[MAINWIN] loadConversation | 切换后历史条数=" << messageHistory_.size();
 }
 
 void MainWindow::onNewConversation()
@@ -725,12 +745,13 @@ void MainWindow::loadSettings()
 {
     qDebug()<<"[MAINWIN] loadSettings";
     settingsPageWidget_->loadSettings();
-    chatPageWidget_->restoreSidebarState(false);
+    chatPageWidget_->restoreSidebarState(true);
 }
 
 // ==================== Prompt 构建 ====================
 
 QString MainWindow::buildSystemPrompt() const
 {
-    return PromptLoader::buildSystemPrompt();
+    // 统一走 PromptLoader，避免两处实现不一致
+    return PromptLoader::buildChatSystemPrompt(AppSettings::chatPromptMode());
 }

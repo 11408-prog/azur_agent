@@ -6,7 +6,5 @@ target_sources(agent_ PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/modemanager.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/settingpagewidget.h
     ${CMAKE_CURRENT_SOURCE_DIR}/settingpagewidget.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/projecthistorydialog.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/projecthistorydialog.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/app.qrc
 )

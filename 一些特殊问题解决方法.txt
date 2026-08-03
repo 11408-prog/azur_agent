@@ -1,0 +1,14 @@
+Q:页面中边栏的代表.exe的标始终删除不了
+A:直接把整个栏隐藏即可
+
+Q:怎么git项目
+A：  git status                  # [1] 看状态
+  git diff --stat             # [2] 看改动量
+  git add 文件1 文件2 目录/    # [3] 暂存（用目录名代替 .）
+  git commit -m "说明"        # [4] 提交
+
+Q:怎么使程序默认是全屏的
+A: 将w.show(); 换为w.showMaximized(); 
+
+Q:本地部署模型怎么调用
+A:输入   http://localhost:11434/v1

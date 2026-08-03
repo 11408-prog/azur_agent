@@ -31,3 +31,9 @@ daily_log/
 # OS
 Thumbs.db
 .DS_Store
+
+# Windows 保留名（PowerShell 误用 > nul 会产生同名文件）
+nul
+
+# 资源备份目录（保留在磁盘，不入库）
+app/resources/备份/

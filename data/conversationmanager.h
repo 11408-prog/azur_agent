@@ -6,6 +6,8 @@
 #include <QJsonObject>
 #include <QString>
 #include <QList>
+#include <QLabel>
+#include <QTimer>
 
 class ConversationManager : public QObject
 {
@@ -40,6 +42,7 @@ private:
     QString generateId() const;
     QString conversationFilePath(const QString &id) const;
     void sortMetaByUpdated();
+
 };
 
 #endif // CONVERSATIONMANAGER_H

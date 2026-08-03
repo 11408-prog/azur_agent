@@ -17,14 +17,38 @@
 namespace AppSettings {
 
 // ---- 连接配置 ----
+// 下面这两组是旧版本遗留的单一连接配置，仅用于升级时的默认值兜底
+// （chatApiKey()/projectApiKey() 等在专属字段为空时会回退读取这两个）。
+// 新代码不要再调用 setApiKey()/setBaseUrl()。
 QString apiKey();
 void setApiKey(const QString &key);
 
 QString baseUrl();
 void setBaseUrl(const QString &url);
 
+// 聊天模式和项目模式分别使用完全独立的连接配置（服务商/账号可以不一样）
+QString chatApiKey();
+void setChatApiKey(const QString &key);
+QString chatBaseUrl();
+void setChatBaseUrl(const QString &url);
+
+QString projectApiKey();
+void setProjectApiKey(const QString &key);
+QString projectBaseUrl();
+void setProjectBaseUrl(const QString &url);
+
 QString model();
 void setModel(const QString &model);
+
+// 聊天模式和项目模式分别使用独立的模型配置——两边任务性质不一样
+// （聊天偏对话流畅度，项目要处理复杂工具调用和更长上下文），分开选更合理。
+// 上面的 model()/setModel() 保留作为旧版本升级时的默认值兜底，
+// 新代码请用下面这两个，不要再调用 setModel()。
+QString chatModel();
+void setChatModel(const QString &model);
+
+QString projectModel();
+void setProjectModel(const QString &model);
 
 QStringList recentModels();
 void setRecentModels(const QStringList &models);
@@ -42,6 +66,9 @@ void setStartupMode(int mode);
 int bgOpacity();
 void setBgOpacity(int opacity);
 
+bool chatBgEnabled();
+void setChatBgEnabled(bool enabled);
+
 bool projectLeftPanelCollapsed();
 void setProjectLeftPanelCollapsed(bool collapsed);
 
@@ -58,6 +85,11 @@ void setProjectHistory(const QJsonArray &history);
 bool projectConvMigrationDone();
 void setProjectConvMigrationDone(bool done);
 
+bool showStatusBar();
+void setShowStatusBar(bool show);
+
+int chatPromptMode();        // 0=精简, 1=完整
+void setChatPromptMode(int mode);
 } // namespace AppSettings
 
 #endif // APPSETTINGS_H

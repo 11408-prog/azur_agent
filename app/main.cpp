@@ -63,7 +63,7 @@ int main(int argc, char *argv[])
     qDebug()<<"========程序运行成功========";
     //创建并显示窗口
     MainWindow w;
-    w.show();
+    w.showMaximized();
     qDebug()<<"窗口显示成功";
 
     return app.exec();
