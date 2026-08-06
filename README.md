@@ -59,6 +59,8 @@ agent_/
 │   │   ├── enterprise.md           # 旧版单文件人格（当前不再加载，待清理）
 │   │   └── 碧蓝航线 企业.md         # 角色背景设定
 │   └── avatar/                     # 头像图片
+|
+├── tests/                          # 使用 Google Test 作为单元测试框架对一些函数进行测试
 │
 ├── lib/ElaWidgetTools/             # 预编译的 ElaWidgetTools 库
 ├── build/                          # 构建输出

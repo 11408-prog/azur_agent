@@ -39,6 +39,9 @@ nul
 # 资源备份目录
 app/resources/备份/
 
+#图片
+*.jpg
+
 # 第三方库二进制文件
 lib/ElaWidgetTools/bin/
 lib/ElaWidgetTools/lib/

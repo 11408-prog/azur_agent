@@ -10,6 +10,9 @@
 class ToolExecutor
 {
 public:
+
+        static QString resolveSafePath(const QString &workspaceRoot, const QString &relativePath, bool *ok);
+
     // 返回工具的 JSON Schema 定义（OpenAI/DeepSeek 的 function calling 格式），
     // 直接塞进请求体的 "tools" 字段。
     static QJsonArray toolDefinitions();
@@ -40,7 +43,7 @@ public:
                                 const QJsonObject &arguments, bool *ok, QString *displayLabel);
 
 private:
-    static QString resolveSafePath(const QString &workspaceRoot, const QString &relativePath, bool *ok);
+
     static QString readFile(const QString &workspaceRoot, const QJsonObject &args, bool *ok, QString *displayLabel);
     static QString listDirectory(const QString &workspaceRoot, const QJsonObject &args, bool *ok, QString *displayLabel);
     static QString searchFileContent(const QString &workspaceRoot, const QJsonObject &args, bool *ok, QString *displayLabel);

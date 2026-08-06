@@ -22,6 +22,23 @@ set_target_properties(Ela::Widgets PROPERTIES
 # ============ 创建可执行目标 ============
 qt_add_executable(agent_ WIN32 MACOSX_BUNDLE)
 
+# 预编译头文件
+target_precompile_headers(agent_ PRIVATE
+    <QtCore/QtCore>
+    <QtWidgets/QtWidgets>
+    <QtNetwork/QtNetwork>
+    <QString>
+    <QList>
+    <QVector>
+    <QMap>
+    <QDebug>
+    <QJsonObject>
+    <QJsonArray>
+    <QFile>
+    <QDir>
+)
+
+
 target_compile_definitions(agent_ PRIVATE
     RESOURCES_DIR="${CMAKE_SOURCE_DIR}/app/resources"
 )
@@ -59,3 +76,15 @@ qt_generate_deploy_app_script(
     NO_UNSUPPORTED_PLATFORM_ERROR
 )
 install(SCRIPT ${deploy_script})
+
+# ---------- 单元测试 ----------
+enable_testing()
+
+include(FetchContent)
+FetchContent_Declare(
+  googletest
+  URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
+)
+FetchContent_MakeAvailable(googletest)
+
+add_subdirectory(tests)
