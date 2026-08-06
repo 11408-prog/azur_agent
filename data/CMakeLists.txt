@@ -1,3 +1,4 @@
+﻿
 target_sources(agent_ PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/conversationmanager.h
     ${CMAKE_CURRENT_SOURCE_DIR}/conversationmanager.cpp

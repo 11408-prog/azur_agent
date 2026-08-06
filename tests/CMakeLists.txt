@@ -19,6 +19,7 @@ add_executable(azur_agent_tests
     test_tool_executor.cpp
     test_context_policy.cpp
     test_appsettings.cpp
+    test_git_executor.cpp
     ${TEST_SOURCES}
 )
 
