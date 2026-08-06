@@ -93,6 +93,13 @@ private:
 
     // 获取某个文件的最后修改时间戳（ISO 格式）
     static QString fileLastModified(const QString &filePath);
+
+    // 轻量级扫描：只检查工作区里是否出现了缓存索引里没有记录过的"新文件"，
+    // 不做内容解析，找到第一个新文件就立即返回 true（提前退出，不用扫完整个目录）。
+    // 跳过目录/隐藏文件/明显的非文本扩展名的判断标准与 scanDirectory() 保持一致，
+    // 避免把索引本来就会忽略的文件（图片、压缩包等）误判成"新增源文件"。
+    static bool hasNewFiles(const QString &workspaceRoot, const QJsonObject &fileTimestamps,
+                             const QStringList &skipDirs);
 };
 
 #endif // PROJECT_ANALYZER_H

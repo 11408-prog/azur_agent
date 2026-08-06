@@ -9,6 +9,8 @@
 #include <QPair>
 #include <QProcess>
 #include <QDebug>
+#include <QDirIterator>
+#include <QRegularExpression>
 
 QStringList ToolExecutor::s_allowedPaths;
 
@@ -154,6 +156,50 @@ QJsonArray ToolExecutor::toolDefinitions()
         func["name"] = "list_directory";
         func["description"] =
             "列出工作区内某个目录下的文件和子目录（只列一层，不递归）。仅限工作区目录内的路径。";
+        func["parameters"] = params;
+
+        QJsonObject tool;
+        tool["type"] = "function";
+        tool["function"] = func;
+        tools.append(tool);
+    }
+
+    // ---- search_file_content ----
+    {
+        QJsonObject patternProp;
+        patternProp["type"] = "string";
+        patternProp["description"] = "要搜索的文本或正则表达式";
+
+        QJsonObject pathProp;
+        pathProp["type"] = "string";
+        pathProp["description"] = "限定搜索的子目录，相对工作区根目录，留空表示搜索整个工作区";
+
+        QJsonObject regexProp;
+        regexProp["type"] = "boolean";
+        regexProp["description"] = "pattern 是否按正则表达式解析，默认 false（纯文本匹配）";
+
+        QJsonObject caseProp;
+        caseProp["type"] = "boolean";
+        caseProp["description"] = "是否区分大小写，默认 false";
+
+        QJsonObject props;
+        props["pattern"] = patternProp;
+        props["path"] = pathProp;
+        props["regex"] = regexProp;
+        props["case_sensitive"] = caseProp;
+
+        QJsonObject params;
+        params["type"] = "object";
+        params["properties"] = props;
+        params["required"] = QJsonArray{ "pattern" };
+
+        QJsonObject func;
+        func["name"] = "search_file_content";
+        func["description"] =
+            "在工作区内递归搜索文本内容，返回匹配的文件路径、行号和该行内容。"
+            "适用于定位函数调用、类的使用位置、字符串出现的地方等，"
+            "比逐个 read_file 猜测效率高得多。跳过 build/.git/node_modules 等目录，"
+            "单文件超过 300KB 或疑似二进制会被跳过，结果最多返回 100 条。";
         func["parameters"] = params;
 
         QJsonObject tool;
@@ -442,12 +488,12 @@ QString ToolExecutor::resolveSafePath(const QString &workspaceRoot, const QStrin
 
     QDir rootDir(workspaceRoot);
     if (!rootDir.exists()) {
-        qDebug()<<"[TOOL_EXEC] resolveSafePath 工作区目录不存在";
+        qDebug() << "[TOOL_EXEC] resolveSafePath 工作区目录不存在";
         return QString();
     }
     const QString canonicalRoot = rootDir.canonicalPath();
     if (canonicalRoot.isEmpty()) {
-        qDebug()<<"[TOOL_EXEC] resolveSafePath 无法获取规范路径";
+        qDebug() << "[TOOL_EXEC] resolveSafePath 无法获取规范路径";
         return QString();
     }
 
@@ -462,25 +508,41 @@ QString ToolExecutor::resolveSafePath(const QString &workspaceRoot, const QStrin
     QFileInfo info(cleaned);
     const QString canonicalTarget = info.exists() ? info.canonicalFilePath() : cleaned;
 
-    // 必须等于根目录本身，或者是根目录下的子路径，否则检查 allowedPaths
-    if (canonicalTarget != canonicalRoot && !canonicalTarget.startsWith(canonicalRoot + "/")) {
-        // 检查是否在额外允许路径白名单中
-        for (const QString &allowed : s_allowedPaths) {
-            const QString canonicalAllowed = QDir(allowed).canonicalPath();
-            if (canonicalAllowed.isEmpty()) continue;
-            if (canonicalTarget == canonicalAllowed || canonicalTarget.startsWith(canonicalAllowed + "/")) {
-                *ok = true;
-                return canonicalTarget;
-            }
-        }
-        qDebug()<<"[TOOL_EXEC] 路径越界被拒绝 | rel="<<relativePath<<"|canonicalTarget="<<canonicalTarget;
-        return QString();
+    // 判断 target 是否在 dir 内部（含 dir 本身）
+    // 使用 relativeFilePath 跨平台判断，不再依赖 "/" 字符串拼接
+    auto isInside = [](const QString &dir, const QString &target) -> bool {
+        if (target == dir) return true;
+        QDir d(dir);
+        QString relPath = d.relativeFilePath(target);
+        if (relPath == ".") return true;
+        // 如果 relativeFilePath 返回的还是绝对路径，说明跨盘符或无法相对化，判定为越界
+        if (QDir::isAbsolutePath(relPath)) return false;
+        // 以 "../" 开头或就是 ".." → 在工作区外
+        // 注意："..foo" 这种合法文件名不会命中（不以 "/" 结尾）
+        if (relPath.startsWith("../") || relPath == "..") return false;
+        return true;
+    };
+
+    if (isInside(canonicalRoot, canonicalTarget)) {
+        *ok = true;
+        return canonicalTarget;
     }
 
-    *ok = true;
-    return canonicalTarget;
-}
+    // 不在根目录内，检查白名单（使用同样的跨平台安全判断）
+    for (const QString &allowed : s_allowedPaths) {
+        const QString canonicalAllowed = QDir(allowed).canonicalPath();
+        if (canonicalAllowed.isEmpty()) continue;
 
+        if (isInside(canonicalAllowed, canonicalTarget)) {
+            *ok = true;
+            return canonicalTarget;
+        }
+    }
+
+    qDebug() << "[TOOL_EXEC] 路径越界被拒绝 | rel=" << relativePath
+             << "|canonicalTarget=" << canonicalTarget;
+    return QString();
+}
 QString ToolExecutor::readFile(const QString &workspaceRoot, const QJsonObject &args, bool *ok, QString *displayLabel)
 {
     *ok = false;
@@ -572,6 +634,107 @@ QString ToolExecutor::listDirectory(const QString &workspaceRoot, const QJsonObj
     *ok = true;
     *displayLabel = QString("列出目录 %1 (%2 项)").arg(relPath).arg(count);
     return lines.isEmpty() ? QStringLiteral("(空目录)") : lines.join('\n');
+}
+
+QString ToolExecutor::searchFileContent(const QString &workspaceRoot, const QJsonObject &args,
+                                         bool *ok, QString *displayLabel)
+{
+    *ok = false;
+    const QString pattern = args.value("pattern").toString();
+    QString scopePath = args.value("path").toString().trimmed();
+    const bool useRegex = args.value("regex").toBool(false);
+    const bool caseSensitive = args.value("case_sensitive").toBool(false);
+
+    *displayLabel = QString("搜索 \"%1\"").arg(pattern.left(40));
+
+    qDebug()<<"[TOOL_EXEC] searchFileContent | pattern="<<pattern<<"|scopePath="<<scopePath
+             <<"|regex="<<useRegex<<"|caseSensitive="<<caseSensitive;
+
+    if (pattern.isEmpty()) {
+        return QStringLiteral("错误：未提供 pattern 参数");
+    }
+
+    if (scopePath.isEmpty()) scopePath = ".";
+    bool pathOk = false;
+    const QString scopeFull = resolveSafePath(workspaceRoot, scopePath, &pathOk);
+    if (!pathOk) {
+        return QString("错误：路径 \"%1\" 不在工作区目录内，已拒绝访问").arg(scopePath);
+    }
+
+    QRegularExpression re;
+    if (useRegex) {
+        re = QRegularExpression(pattern,
+            caseSensitive ? QRegularExpression::NoPatternOption
+                          : QRegularExpression::CaseInsensitiveOption);
+        if (!re.isValid()) {
+            return QString("错误：正则表达式无效: %1").arg(re.errorString());
+        }
+    }
+
+    // 跳过目录列表：与 ProjectAnalyzer::defaultSkipDirs() 保持基本一致，
+    // 避免搜索到 build 产物、依赖库、缓存目录里的内容。
+    static const QStringList kSkipDirs = {
+        "build", "build_fresh", ".git", ".azur", "lib", "bin", "obj",
+        "node_modules", "__pycache__", ".vscode", ".idea",
+        "cmake-build-debug", "cmake-build-release", "daily_log"
+    };
+
+    constexpr int kMaxResults = 100;
+    constexpr qint64 kMaxFileSizeForSearch = 300 * 1024; // 与 read_file 的上限保持一致
+
+    QStringList results;
+    int matchCount = 0;
+    int filesScanned = 0;
+
+    QDirIterator it(scopeFull, QDir::Files | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
+    while (it.hasNext() && matchCount < kMaxResults) {
+        const QString filePath = it.next();
+
+        // 跳过黑名单目录（路径片段里包含跳过目录名就算命中）
+        bool skip = false;
+        for (const QString &s : kSkipDirs) {
+            if (filePath.contains(QStringLiteral("/%1/").arg(s))) { skip = true; break; }
+        }
+        if (skip) continue;
+
+        QFileInfo fi(filePath);
+        if (fi.size() > kMaxFileSizeForSearch || fi.size() == 0) continue;
+
+        QFile file(filePath);
+        if (!file.open(QIODevice::ReadOnly)) continue;
+        const QByteArray data = file.readAll();
+        file.close();
+        if (looksBinary(data)) continue;
+
+        ++filesScanned;
+        const QString text = QString::fromUtf8(data);
+        const QStringList lines = text.split('\n');
+        const QString relPath = QDir(workspaceRoot).relativeFilePath(filePath);
+
+        for (int i = 0; i < lines.size() && matchCount < kMaxResults; ++i) {
+            const bool hit = useRegex
+                ? re.match(lines[i]).hasMatch()
+                : lines[i].contains(pattern, caseSensitive ? Qt::CaseSensitive : Qt::CaseInsensitive);
+            if (hit) {
+                results << QString("%1:%2: %3").arg(relPath).arg(i + 1).arg(lines[i].trimmed().left(200));
+                ++matchCount;
+            }
+        }
+    }
+
+    *ok = true;
+    *displayLabel = QString("搜索 \"%1\" (%2 处匹配，%3 个文件)")
+        .arg(pattern.left(30)).arg(matchCount).arg(filesScanned);
+
+    qDebug()<<"[TOOL_EXEC] searchFileContent 完成 | 匹配数="<<matchCount<<"|扫描文件数="<<filesScanned;
+
+    if (results.isEmpty()) {
+        return QStringLiteral("未找到匹配内容");
+    }
+    if (matchCount >= kMaxResults) {
+        results << QString("... 结果已达 %1 条上限，未列出更多").arg(kMaxResults);
+    }
+    return truncateForTool(results.join('\n'));
 }
 
 QString ToolExecutor::writeFile(const QString &workspaceRoot, const QJsonObject &args,
@@ -1206,6 +1369,9 @@ QString ToolExecutor::execute(const QString &workspaceRoot, const QString &toolN
     }
     if (toolName == QLatin1String("list_directory")) {
         return listDirectory(workspaceRoot, arguments, ok, displayLabel);
+    }
+    if (toolName == QLatin1String("search_file_content")) {
+        return searchFileContent(workspaceRoot, arguments, ok, displayLabel);
     }
     if (toolName == QLatin1String("write_file")) {
         return writeFile(workspaceRoot, arguments, ok, displayLabel, diffOutput);

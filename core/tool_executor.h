@@ -5,7 +5,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 
-// 工具执行器：read_file / list_directory / write_file / apply_patch
+// 工具执行器：read_file / list_directory / search_file_content / write_file / apply_patch
 // 所有路径都会被强制限制在"工作区目录"内，越权访问一律拒绝。
 class ToolExecutor
 {
@@ -43,6 +43,7 @@ private:
     static QString resolveSafePath(const QString &workspaceRoot, const QString &relativePath, bool *ok);
     static QString readFile(const QString &workspaceRoot, const QJsonObject &args, bool *ok, QString *displayLabel);
     static QString listDirectory(const QString &workspaceRoot, const QJsonObject &args, bool *ok, QString *displayLabel);
+    static QString searchFileContent(const QString &workspaceRoot, const QJsonObject &args, bool *ok, QString *displayLabel);
     static QString writeFile(const QString &workspaceRoot, const QJsonObject &args, bool *ok, QString *displayLabel, QString *diffOutput);
     static QString applyPatch(const QString &workspaceRoot, const QJsonObject &args, bool *ok, QString *displayLabel, QString *diffOutput);
     static QString generateDiff(const QString &originalContent, const QString &newContent,

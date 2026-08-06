@@ -10,6 +10,7 @@
 #include <QDebug>
 #include <QCoreApplication>
 #include <QDirIterator>
+#include <QSet>
 #include <utility>
 
 // ==================== 默认跳过目录 ====================
@@ -60,7 +61,9 @@ bool ProjectAnalyzer::needsRebuild(const QString &workspaceRoot)
     const QJsonObject fileTimestamps = cached["fileTimestamps"].toObject();
     if (fileTimestamps.isEmpty()) return true;
 
-    // 检查各个源文件是否被改过
+    // 检查各个已收录源文件是否被改过或被删除
+    // （文件被删除时 fileLastModified() 返回空字符串，天然会和非空的 cachedMtime 不一致，
+    //  所以删除的情况已经被这段覆盖，不需要额外处理）
     const QJsonArray files = cached["files"].toArray();
     for (const QJsonValue &v : files) {
         const QString relPath = v.toObject()["path"].toString();
@@ -74,6 +77,54 @@ bool ProjectAnalyzer::needsRebuild(const QString &workspaceRoot)
         }
     }
 
+    // 之前的实现到这里就结束了，只会对比"已经收录过的文件"，
+    // 新建的源文件不在 fileTimestamps 里，永远不会被检测到（见 PROJECT.md 已知待办）。
+    // 这里补一次轻量扫描，专门找"存在于磁盘但索引里没记录过"的文件。
+    if (hasNewFiles(workspaceRoot, fileTimestamps, defaultSkipDirs())) {
+        return true;
+    }
+
+    return false;
+}
+
+// ==================== 轻量扫描：检测新增文件 ====================
+bool ProjectAnalyzer::hasNewFiles(const QString &workspaceRoot, const QJsonObject &fileTimestamps,
+                                   const QStringList &skipDirs)
+{
+    // 与 scanDirectory() 里跳过的扩展名保持一致，否则会把索引本就忽略的
+    // 图片/压缩包/二进制文件误判成"新增源文件"，导致不必要的重建。
+    static const QSet<QString> kSkipExt = {
+        "exe", "dll", "lib", "obj", "pdb", "png", "jpg", "jpeg", "gif", "bmp",
+        "ico", "svg", "ttf", "otf", "woff", "woff2", "mp3", "mp4", "avi", "mkv",
+        "zip", "rar", "7z", "tar", "gz", "pdf", "doc", "docx", "xls", "xlsx",
+        "o", "a"
+    };
+
+    QDirIterator it(workspaceRoot, QDir::Files | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
+    while (it.hasNext()) {
+        const QString filePath = it.next();
+        const QFileInfo fi(filePath);
+
+        // 跳过隐藏文件
+        if (fi.fileName().startsWith('.')) continue;
+
+        // 跳过黑名单目录（路径片段里包含跳过目录名）
+        bool inSkipDir = false;
+        for (const QString &s : skipDirs) {
+            if (filePath.contains(QStringLiteral("/%1/").arg(s))) { inSkipDir = true; break; }
+        }
+        if (inSkipDir) continue;
+
+        // 跳过非文本扩展名 / 空文件
+        if (kSkipExt.contains(fi.suffix().toLower())) continue;
+        if (fi.size() == 0) continue;
+
+        const QString relPath = QDir(workspaceRoot).relativeFilePath(filePath);
+        if (!fileTimestamps.contains(relPath)) {
+            qDebug() << "[ANALYZER] 发现新文件，需要重建索引:" << relPath;
+            return true;
+        }
+    }
     return false;
 }
 
