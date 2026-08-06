@@ -37,3 +37,11 @@ nul
 
 # 资源备份目录（保留在磁盘，不入库）
 app/resources/备份/
+
+# 第三方库二进制文件
+lib/ElaWidgetTools/bin/
+lib/ElaWidgetTools/lib/
+
+# 日志和编译缓存
+daily_log/
+build/
