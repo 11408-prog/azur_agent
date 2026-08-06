@@ -1,3 +1,4 @@
+
 # Build directories
 build*/
 cmake-build-*/
@@ -32,16 +33,12 @@ daily_log/
 Thumbs.db
 .DS_Store
 
-# Windows 保留名（PowerShell 误用 > nul 会产生同名文件）
+# Windows 保留名
 nul
 
-# 资源备份目录（保留在磁盘，不入库）
+# 资源备份目录
 app/resources/备份/
 
 # 第三方库二进制文件
 lib/ElaWidgetTools/bin/
 lib/ElaWidgetTools/lib/
-
-# 日志和编译缓存
-daily_log/
-build/
