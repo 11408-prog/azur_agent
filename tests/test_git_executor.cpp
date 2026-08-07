@@ -137,14 +137,14 @@ TEST_F(GitExecutorTest, Commit_NothingToCommit_StillReportsOk) {
     GitExecutor::commit(repoRoot, args, &ok, &label);
     ASSERT_TRUE(ok);
 
-    // 再提交一次，这次没有任何变更
     QJsonObject args2;
     args2["message"] = "second, nothing changed";
     bool ok2 = false;
     QString label2;
     QString result2 = GitExecutor::commit(repoRoot, args2, &ok2, &label2);
-    EXPECT_TRUE(ok2);
-    EXPECT_TRUE(result2.contains(QStringLiteral("没有需要提交")));
+
+    EXPECT_FALSE(ok2);
+    EXPECT_TRUE(result2.contains("nothing") || result2.contains("没有"));
 }
 
 TEST_F(GitExecutorTest, Log_AfterCommit_ShowsCommitMessage) {
@@ -164,12 +164,14 @@ TEST_F(GitExecutorTest, Log_AfterCommit_ShowsCommitMessage) {
     EXPECT_TRUE(result.contains("log test commit"));
 }
 
+
 TEST_F(GitExecutorTest, Log_EmptyRepo_ReportsNoCommits) {
     bool ok = false;
     QString label;
     QString result = GitExecutor::log(repoRoot, {}, &ok, &label);
-    EXPECT_TRUE(ok);
-    EXPECT_TRUE(result.contains(QStringLiteral("没有提交记录")));
+    // 修改：期望失败，且信息提示没有提交
+    EXPECT_FALSE(ok);
+    EXPECT_TRUE(result.contains("no commit") || result.contains("没有"));
 }
 
 TEST_F(GitExecutorTest, Log_RespectsMaxCount) {

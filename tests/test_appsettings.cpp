@@ -62,6 +62,9 @@ TEST(AppSettingsTest, DefaultPermissionIsZero) {
 }
 
 TEST(AppSettingsTest, StartupModeDefaultIsZero) {
+    // 清除可能残留的设置，确保读取的是默认值
+    QSettings settings;
+    settings.remove("startupMode");
     int mode = AppSettings::startupMode();
     EXPECT_EQ(mode, 0);
 }

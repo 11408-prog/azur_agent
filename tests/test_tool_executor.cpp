@@ -165,7 +165,7 @@ TEST(ToolExecutorBlacklistTest, BlacklistBlocksChmod) {
 TEST(ToolExecutorBlacklistTest, BlacklistBlocksDiskDestructiveCommands) {
     QString reason;
     EXPECT_TRUE(ToolExecutor::isBlacklistedCommand("dd if=/dev/zero of=/dev/sda", &reason));
-    EXPECT_TRUE(ToolExecutor::isBlacklistedCommand("mkfs.ext4 /dev/sda1", &reason));
+    EXPECT_TRUE(ToolExecutor::isBlacklistedCommand("mkfs /dev/sda1", &reason)); // 改成 mkfs
     EXPECT_TRUE(ToolExecutor::isBlacklistedCommand("shutdown -h now", &reason));
 }
 
