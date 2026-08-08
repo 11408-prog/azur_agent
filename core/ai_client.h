@@ -19,11 +19,13 @@ public:
     explicit DeepSeekClient(QObject *parent = nullptr);
     ~DeepSeekClient() override;
 
-    // tools 留空数组时，行为和原来完全一样（不带function calling）
-    void sendMessage(const QString &apiKey, const QString &baseUrl, const QString &model,
-                     const QJsonArray &messages, const QJsonArray &tools = QJsonArray());
-    void testConnection(const QString &apiKey, const QString &baseUrl);
-    void cancel();
+    // ============ 修改点：添加 virtual ============
+    // 以便 GMock 可以 override 这些函数
+    virtual void sendMessage(const QString &apiKey, const QString &baseUrl, const QString &model,
+                             const QJsonArray &messages, const QJsonArray &tools = QJsonArray());
+    virtual void testConnection(const QString &apiKey, const QString &baseUrl);
+    virtual void cancel();
+    // ============================================
 
 signals:
     void chunkReceived(const QString &delta);
@@ -41,7 +43,8 @@ private slots:
 private:
     static QUrl chatCompletionsUrl(const QString &baseUrl);
     static QUrl modelsUrl(const QString &baseUrl);
-    static QString requestErrorMessage(QNetworkReply::NetworkError error, int statusCode,const QByteArray &responseData, const QString &errorString);
+    static QString requestErrorMessage(QNetworkReply::NetworkError error, int statusCode,
+                                       const QByteArray &responseData, const QString &errorString);
 
     // 流式响应里，一次完整的工具调用会被拆成好几个SSE事件陆续吐出来：
     // id/name 一般一次给全，arguments 是一段一段的JSON字符串片段，必须按 index 累积拼接
@@ -59,7 +62,7 @@ private:
     QByteArray rawResponseBuffer_;
     QByteArray sseLineBuffer_; // 跨次readyRead拼接不完整的SSE行，避免一条"data: {...}"被网络分包切断导致内容丢失
     QMap<int, PendingToolCall> pendingToolCalls_; // key是流式分片里的index，QMap按key升序天然保证顺序
-    bool sawToolCallFinish_;
+    bool sawToolCallFinish_ = false;
 };
 
 #endif // DEEPSEEKCLIENT_H

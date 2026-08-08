@@ -9,7 +9,6 @@
 #include <ElaNavigationBar.h>
 #include <ElaScrollPage.h>
 #include <ElaText.h>
-#include <ElaIconButton.h>
 #include <ElaLineEdit.h>
 #include <ElaComboBox.h>
 #include <ElaToggleSwitch.h>
@@ -78,7 +77,6 @@ MainWindow::MainWindow(QWidget *parent)
     , chatEngine_(nullptr)
     , chatPageWidget_(nullptr)
     , settingsPageWidget_(nullptr)
-    , sidebarToggleBtn_(nullptr)
 {
     qDebug()<<"[MAINWIN] 构造 MainWindow";
     setWindowTitle("Azur Agent");
@@ -260,13 +258,16 @@ MainWindow::MainWindow(QWidget *parent)
     chatPageWidget_->refreshConversationList(
         conversationManager_->conversationsMeta(), currentConversationId_);
 
-    // ==================== 侧边栏折叠按钮状态 ====================
+    // ==================== 侧边栏折叠：点击导航栏 footer 节点触发 ====================
 
     connect(chatPageWidget_, &ChatPageWidget::sidebarCollapsedChanged,
             this, &MainWindow::updateToggleButtonState);
 
-    connect(sidebarToggleBtn_, &ElaIconButton::clicked, this, [this]() {
-        chatPageWidget_->toggleSidebar();
+    connect(this, &ElaWindow::navigationNodeClicked, this,
+            [this](ElaNavigationType::NavigationNodeType, QString nodeKey) {
+        if (!sidebarToggleFooterKey_.isEmpty() && nodeKey == sidebarToggleFooterKey_) {
+            chatPageWidget_->toggleSidebar();
+        }
     });
 
     updateToggleButtonState();
@@ -276,11 +277,12 @@ MainWindow::MainWindow(QWidget *parent)
 
 void MainWindow::updateToggleButtonState()
 {
-    if (!sidebarToggleBtn_) return;
+    if (sidebarToggleFooterKey_.isEmpty()) return;
 
     bool collapsed = chatPageWidget_->isSidebarCollapsed();
-    sidebarToggleBtn_->setAwesome(collapsed ? ElaIconType::Sidebar : ElaIconType::SidebarFlip);
-    sidebarToggleBtn_->setToolTip(collapsed ? "显示历史记录" : "隐藏历史记录");
+    // ElaWindow 只公开了改导航节点文字的接口，没有公开改图标的接口，
+    // 所以这里用文字变化代替原来按钮的图标切换来表达状态。
+    setNavigationNodeTitle(sidebarToggleFooterKey_, collapsed ? "显示历史记录" : "隐藏历史记录");
 }
 
 // ==================== 导航设置 ====================
@@ -316,28 +318,13 @@ void MainWindow::setupNavigation()
     aboutPage_->setTitleVisible(false);
     setupAboutPage();
 
-    // ========== AppBar 按钮 ==========
-    QWidget *appBarActions = new QWidget(this);
-    appBarActions->setFixedHeight(32);
-    appBarActions->setStyleSheet("background: transparent;");
-    QHBoxLayout *appBarActionsLayout = new QHBoxLayout(appBarActions);
-    appBarActionsLayout->setContentsMargins(0, 0, 0, 2);
-    appBarActionsLayout->setSpacing(4);
-
-    sidebarToggleBtn_ = new ElaIconButton(ElaIconType::SidebarFlip, 16, 30, 30, appBarActions);
-    sidebarToggleBtn_->setToolTip("隐藏历史记录");
-    connect(chatPageWidget_, &ChatPageWidget::sidebarCollapsedChanged, this, [this](bool collapsed) {
-        sidebarToggleBtn_->setAwesome(collapsed ? ElaIconType::Sidebar : ElaIconType::SidebarFlip);
-        sidebarToggleBtn_->setToolTip(collapsed ? "显示历史记录" : "隐藏历史记录");
-    });
-
-    appBarActionsLayout->addWidget(sidebarToggleBtn_, 0, Qt::AlignTop);
-    appBarActionsLayout->addStretch();
-    setCustomWidget(ElaAppBarType::LeftArea, appBarActions);
-
     addPageNode("对话", chatPage_, ElaIconType::CommentDots);
 
     QString settingKey, aboutKey;
+    // 侧边栏折叠是个"动作"而不是"页面"，用不带 page 参数的 addFooterNode()
+    // 重载——点击只会发 navigationNodeClicked 信号，不会真的导航到某个页面，
+    // 见构造函数里对这个信号的连接。
+    addFooterNode("隐藏历史记录", sidebarToggleFooterKey_, 0, ElaIconType::SidebarFlip);
     addFooterNode("设置", settingPage_, settingKey, 0, ElaIconType::GearComplex);
     addFooterNode("关于", aboutPage_, aboutKey, 0, ElaIconType::Info);
 }

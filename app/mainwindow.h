@@ -2,7 +2,6 @@
 #define MAINWINDOW_H
 
 #include <ElaWindow.h>
-#include <ElaIconButton.h>
 #include <ElaScrollPage.h>
 #include <ElaScrollArea.h>
 #include <ElaScrollPageArea.h>
@@ -76,6 +75,9 @@ private:
     // ---- AppBar 按钮更新 ----
     void updateToggleButtonState();
 
+    // 侧边栏折叠按钮对应的导航栏 footer 节点 key（见 setupNavigation()）
+    QString sidebarToggleFooterKey_;
+
     // ---- 导航页 ----
     ElaScrollPage *chatPage_;
     ElaScrollPage *settingPage_;
@@ -91,7 +93,12 @@ private:
     SettingPageWidget *settingsPageWidget_;
 
     // ---- AppBar 按钮 ----
-    ElaIconButton *sidebarToggleBtn_;
+    // 注：这里刻意不放"侧边栏折叠"这类控件，因为它一旦占据 AppBar 的
+    // LeftArea/RightArea，会把标题栏原本可拖动窗口的空白区域吃掉
+    // （ElaAppBar 默认支持拖动窗口，但自定义控件区域需要额外接入
+    // hit-test 机制才能把空白部分让出来）。这个按钮改放到导航栏的
+    // footer 节点里（见 setupNavigation() 里的 sidebarToggleFooterKey_），
+    // 导航栏区域本来就不属于标题栏拖动判定范围，不会有这个问题。
 
     // ---- Chat 模式状态 ----
     QList<QJsonObject> messageHistory_;
