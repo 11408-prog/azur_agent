@@ -4,8 +4,6 @@ set(TEST_SOURCES
     ../core/tool_executor.cpp
     ../core/contextpolicy.cpp
     ../data/appsettings.cpp
-    ../core/git_executor.cpp
-    # add other sources if needed, e.g. ../core/git_executor.cpp
 )
 
 include(FetchContent)
@@ -19,7 +17,6 @@ add_executable(azur_agent_tests
     test_tool_executor.cpp
     test_context_policy.cpp
     test_appsettings.cpp
-    test_git_executor.cpp
     ${TEST_SOURCES}
 )
 
@@ -27,9 +24,13 @@ find_package(Qt6 COMPONENTS Core REQUIRED)
 target_link_libraries(azur_agent_tests
     PRIVATE
     Qt6::Core
-    Qt6::Network          # git_executor 可能用到 QNetworkAccessManager 等
     gtest_main
-    Ela::Widgets          # 如果 tool_executor 或 git_executor 引用了 Ela 符号
+    # 注：test_tool_executor / test_context_policy / test_appsettings 覆盖的三个
+    # 源文件（tool_executor.cpp / contextpolicy.cpp / appsettings.cpp）完全不依赖
+    # ElaWidgetTools，测试目标不链接 Ela::Widgets，这样跑单元测试不需要先编译
+    # ElaWidgetTools 库（这一步在只想构建主程序时也是可选的，见根 CMakeLists.txt
+    # 的 AZUR_BUILD_TESTS 开关）。如果以后测试覆盖到了引用 Ela 符号的模块，
+    # 再把 Ela::Widgets 加回来。
 )
 
 # 为测试目标启用预编译头（加速 Qt + GTest 编译）

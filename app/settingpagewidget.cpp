@@ -21,12 +21,9 @@
 
 SettingPageWidget::SettingPageWidget(QWidget *parent)
     : QWidget(parent)
-    , chatApiKeyEdit_(nullptr)
-    , chatBaseUrlEdit_(nullptr)
-    , projectApiKeyEdit_(nullptr)
-    , projectBaseUrlEdit_(nullptr)
-    , chatModelComboBox_(nullptr)
-    , projectModelComboBox_(nullptr)
+    , apiKeyEdit_(nullptr)
+    , baseUrlEdit_(nullptr)
+    , modelComboBox_(nullptr)
     , bgOpacitySlider_(nullptr)
 {
     setupUI();
@@ -34,34 +31,19 @@ SettingPageWidget::SettingPageWidget(QWidget *parent)
 
 SettingPageWidget::~SettingPageWidget() = default;
 
-QString SettingPageWidget::chatApiKey() const
+QString SettingPageWidget::apiKey() const
 {
-    return chatApiKeyEdit_ ? chatApiKeyEdit_->text().trimmed() : QString();
+    return apiKeyEdit_ ? apiKeyEdit_->text().trimmed() : QString();
 }
 
-QString SettingPageWidget::chatBaseUrl() const
+QString SettingPageWidget::baseUrl() const
 {
-    return chatBaseUrlEdit_ ? chatBaseUrlEdit_->text().trimmed() : QString();
+    return baseUrlEdit_ ? baseUrlEdit_->text().trimmed() : QString();
 }
 
-QString SettingPageWidget::projectApiKey() const
+QString SettingPageWidget::modelName() const
 {
-    return projectApiKeyEdit_ ? projectApiKeyEdit_->text().trimmed() : QString();
-}
-
-QString SettingPageWidget::projectBaseUrl() const
-{
-    return projectBaseUrlEdit_ ? projectBaseUrlEdit_->text().trimmed() : QString();
-}
-
-QString SettingPageWidget::chatModelName() const
-{
-    return chatModelComboBox_ ? chatModelComboBox_->currentText().trimmed() : QString();
-}
-
-QString SettingPageWidget::projectModelName() const
-{
-    return projectModelComboBox_ ? projectModelComboBox_->currentText().trimmed() : QString();
+    return modelComboBox_ ? modelComboBox_->currentText().trimmed() : QString();
 }
 
 int SettingPageWidget::bgOpacity() const
@@ -87,11 +69,8 @@ void SettingPageWidget::rememberModel(const QString &model)
     while (recentModels_.size() > 8) {
         recentModels_.removeLast();
     }
-    if (chatModelComboBox_ && chatModelComboBox_->findText(model) == -1) {
-        chatModelComboBox_->addItem(model);
-    }
-    if (projectModelComboBox_ && projectModelComboBox_->findText(model) == -1) {
-        projectModelComboBox_->addItem(model);
+    if (modelComboBox_ && modelComboBox_->findText(model) == -1) {
+        modelComboBox_->addItem(model);
     }
     saveSettings();
 }
@@ -257,23 +236,15 @@ void SettingPageWidget::setupUI()
     rootLayout->setSpacing(16);
 
     // ============================================================
-    // 卡片 1：聊天模式连接配置
+    // 卡片 1：AI 服务连接配置
     // ============================================================
-    QFrame *chatConnCard = createConnectionCard(
-        this, this, "聊天模式连接", "聊天模式使用的 AI 服务接入方式",
-        &chatApiKeyEdit_, &chatBaseUrlEdit_, &chatModelComboBox_);
-    rootLayout->addWidget(chatConnCard);
+    QFrame *connCard = createConnectionCard(
+        this, this, "AI 服务连接", "与企业对话所使用的 AI 服务接入方式",
+        &apiKeyEdit_, &baseUrlEdit_, &modelComboBox_);
+    rootLayout->addWidget(connCard);
 
     // ============================================================
-    // 卡片 2：项目模式连接配置
-    // ============================================================
-    QFrame *projectConnCard = createConnectionCard(
-        this, this, "项目模式连接", "项目模式使用的 AI 服务接入方式",
-        &projectApiKeyEdit_, &projectBaseUrlEdit_, &projectModelComboBox_);
-    rootLayout->addWidget(projectConnCard);
-
-    // ============================================================
-    // 卡片 2：Agent 行为
+    // 卡片 2：对话设置
     // ============================================================
     QFrame *agentCard = createCard(this);
     QVBoxLayout *agentLayout = new QVBoxLayout(agentCard);
@@ -281,7 +252,7 @@ void SettingPageWidget::setupUI()
     agentLayout->setSpacing(12);
 
     agentLayout->addLayout(createCardHeader(agentCard, ElaIconType::Gear,
-                                            "Agent 行为", "控制 Agent 的自动化程度与权限"));
+                                            "对话设置", "控制系统提示词的详略程度"));
     agentLayout->addWidget(createSeparator(agentCard));
 
     QGridLayout *agentForm = new QGridLayout();
@@ -289,34 +260,6 @@ void SettingPageWidget::setupUI()
     agentForm->setVerticalSpacing(12);
     agentForm->setColumnStretch(0, 0);
     agentForm->setColumnStretch(1, 1);
-
-    // 默认模式
-    ElaText *modeLabel = new ElaText("默认模式", agentCard);
-    modeLabel->setTextPixelSize(13);
-    modeLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    ElaComboBox *modeCombo = new ElaComboBox(agentCard);
-    modeCombo->setMinimumHeight(34);
-    modeCombo->addItems({"聊天模式", "项目模式"});
-    modeCombo->setCurrentIndex(AppSettings::startupMode());
-    connect(modeCombo, &QComboBox::currentIndexChanged, this, [](int idx) {
-        AppSettings::setStartupMode(idx);
-    });
-    agentForm->addWidget(modeLabel, 0, 0);
-    agentForm->addWidget(modeCombo, 0, 1);
-
-    // Agent 权限
-    ElaText *permLabel = new ElaText("Agent 权限", agentCard);
-    permLabel->setTextPixelSize(13);
-    permLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    ElaComboBox *permCombo = new ElaComboBox(agentCard);
-    permCombo->setMinimumHeight(34);
-    permCombo->addItems({"每次确认", "自动执行"});
-    permCombo->setCurrentIndex(AppSettings::agentPermission());
-    connect(permCombo, &QComboBox::currentIndexChanged, this, [](int idx) {
-        AppSettings::setAgentPermission(idx);
-    });
-    agentForm->addWidget(permLabel, 1, 0);
-    agentForm->addWidget(permCombo, 1, 1);
 
     //Prompt 模式
     ElaText *promptLabel = new ElaText("Prompt 模式", agentCard);
@@ -329,8 +272,8 @@ void SettingPageWidget::setupUI()
     connect(promptCombo, &QComboBox::currentIndexChanged, this, [](int idx) {
         AppSettings::setChatPromptMode(idx);
     });
-    agentForm->addWidget(promptLabel, 2, 0);
-    agentForm->addWidget(promptCombo, 2, 1);
+    agentForm->addWidget(promptLabel, 0, 0);
+    agentForm->addWidget(promptCombo, 0, 1);
 
     agentLayout->addLayout(agentForm);
     rootLayout->addWidget(agentCard);
@@ -446,33 +389,24 @@ void SettingPageWidget::setupUI()
 void SettingPageWidget::loadSettings()
 {
     qDebug() << "[SETTING] loadSettings";
-    chatApiKeyEdit_->setText(AppSettings::chatApiKey());
-    chatBaseUrlEdit_->setText(AppSettings::chatBaseUrl());
-    projectApiKeyEdit_->setText(AppSettings::projectApiKey());
-    projectBaseUrlEdit_->setText(AppSettings::projectBaseUrl());
+    apiKeyEdit_->setText(AppSettings::apiKey());
+    baseUrlEdit_->setText(AppSettings::baseUrl());
 
     recentModels_ = AppSettings::recentModels();
     for (const QString &model : recentModels_) {
         if (model.isEmpty()) continue;
-        if (chatModelComboBox_->findText(model) == -1) {
-            chatModelComboBox_->addItem(model);
-        }
-        if (projectModelComboBox_->findText(model) == -1) {
-            projectModelComboBox_->addItem(model);
+        if (modelComboBox_->findText(model) == -1) {
+            modelComboBox_->addItem(model);
         }
     }
-    chatModelComboBox_->setCurrentText(AppSettings::chatModel());
-    projectModelComboBox_->setCurrentText(AppSettings::projectModel());
+    modelComboBox_->setCurrentText(AppSettings::model());
 }
 
 void SettingPageWidget::saveSettings()
 {
     qDebug() << "[SETTING] saveSettings";
-    AppSettings::setChatApiKey(chatApiKeyEdit_->text());
-    AppSettings::setChatBaseUrl(chatBaseUrlEdit_->text().trimmed());
-    AppSettings::setProjectApiKey(projectApiKeyEdit_->text());
-    AppSettings::setProjectBaseUrl(projectBaseUrlEdit_->text().trimmed());
-    AppSettings::setChatModel(chatModelComboBox_->currentText());
-    AppSettings::setProjectModel(projectModelComboBox_->currentText());
+    AppSettings::setApiKey(apiKeyEdit_->text());
+    AppSettings::setBaseUrl(baseUrlEdit_->text().trimmed());
+    AppSettings::setModel(modelComboBox_->currentText());
     AppSettings::setRecentModels(recentModels_);
 }

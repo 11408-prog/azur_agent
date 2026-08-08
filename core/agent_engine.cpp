@@ -39,9 +39,6 @@ void AgentEngine::start(const QString &apiKey, const QString &baseUrl, const QSt
     messageHistory_ = messageHistory;
     buffer_.clear();
     toolRound_ = 0;
-    waitingConfirm_ = false;
-    pendingToolCalls_ = QJsonArray();
-    pendingDiffs_.clear();
 
     isRunning_ = true;
     ToolExecutor::setAllowedPaths(allowedPaths_);
@@ -56,12 +53,10 @@ void AgentEngine::start(const QString &apiKey, const QString &baseUrl, const QSt
 
 void AgentEngine::cancel()
 {
-    if (!isRunning_ && !waitingConfirm_) return;
+    if (!isRunning_) return;
     disconnectClient();
     client_->cancel();
     isRunning_ = false;
-    waitingConfirm_ = false;
-    pendingToolCalls_ = QJsonArray();
 }
 
 // ==================== Client 信号连接管理 ====================
@@ -173,86 +168,22 @@ void AgentEngine::onToolCallsReceived(const QJsonArray &toolCalls)
 {
     emit stepChanged("✓ 生成回复完成");
 
-    bool hasWrite = false;
     // 记录 AI 的工具调用消息到历史
     QJsonObject assistantMsg;
     assistantMsg["role"] = "assistant";
     assistantMsg["content"] = QJsonValue::Null;
     assistantMsg["tool_calls"] = toolCalls;
     messageHistory_.append(assistantMsg);
-    // 检查是否有写操作
-    for (const QJsonValue &v : toolCalls) {
-        const QString name = v.toObject()["function"].toObject()["name"].toString();
-        if (ToolExecutor::isWriteTool(name)) {
-            hasWrite = true;
-            break;
-        }
-    }
-    qDebug()<<"[ENGINE] 收到工具调用请求 | 工具数量"<<toolCalls.size()
-             <<" | 是否有写操作="<<(hasWrite ? "是" : "否")
-             <<" | autoExecute_="<<(autoExecute_ ? "是" : "否");
-    if (hasWrite && !autoExecute_) {
-        qDebug()<<"[ENGINE] 触发写确认 | 等待用户响应";
-        // 生成预览 diff，等待用户确认
-        pendingToolCalls_ = toolCalls;
-        pendingDiffs_ = previewDiff(toolCalls);
-        waitingConfirm_ = true;
-        emit stepChanged("等待用户确认修改...");
-        emit writeConfirmationRequired(pendingDiffs_);
-        return;
-    }
 
-    if (hasWrite) {
-        // 设置页选择了"自动执行"：跳过确认弹窗，但仍然在步骤面板里如实标注，
-        // 避免用户完全不知道 AI 自己执行了写操作/命令。
-        emit stepChanged("⚙ Agent 权限=自动执行，跳过确认直接执行");
-    }
-
-    // 没有写操作，或已设置自动执行，直接执行
+    // 当前工具集里没有写操作工具（read_file / list_directory 均为只读），
+    // 不存在需要用户确认的情况，直接执行。
+    qDebug()<<"[ENGINE] 收到工具调用请求 | 工具数量"<<toolCalls.size();
     executeToolCalls(toolCalls);
 }
 
 void AgentEngine::onError(const QString &errorMessage)
 {
     doFail(errorMessage);
-}
-
-// ==================== 用户确认写操作 ====================
-void AgentEngine::confirmWrite(bool accepted)
-{
-    qDebug()<<"[ENGINE] 用户确认结果： "<<(accepted ? "接受" : "拒绝");
-    if (!waitingConfirm_) return;
-    waitingConfirm_ = false;
-
-    if (!accepted) {
-        // 拒绝：把所有工具标记为"已拒绝"
-        for (const QJsonValue &v : pendingToolCalls_) {
-            const QJsonObject tc = v.toObject();
-            const QString id = tc["id"].toString();
-            const QString name = tc["function"].toObject()["name"].toString();
-
-            QJsonObject toolMsg;
-            toolMsg["role"] = "tool";
-            toolMsg["tool_call_id"] = id;
-            toolMsg["content"] = QStringLiteral("用户拒绝了工具调用 [%1]。请勿重试。").arg(name);
-            messageHistory_.append(toolMsg);
-        }
-        pendingToolCalls_ = QJsonArray();
-
-        emit stepChanged(QStringLiteral("\u2717 用户已拒绝修改"));
-
-        // 拒绝后直接结束本轮
-        disconnectClient();
-        isRunning_ = false;
-        emit finished("已拒绝修改操作。");
-        return;
-    }
-
-    // 接受：执行所有工具
-    emit stepChanged(QStringLiteral("\u2713 用户已确认修改"));
-    const QJsonArray calls = pendingToolCalls_;
-    pendingToolCalls_ = QJsonArray();
-    executeToolCalls(calls);
 }
 
 // ==================== 执行工具调用 ====================
@@ -303,33 +234,6 @@ void AgentEngine::executeToolCalls(const QJsonArray &toolCalls)
     sendRequest();
 }
 
-// ==================== Diff 预览 ====================
-QStringList AgentEngine::previewDiff(const QJsonArray &toolCalls)
-{
-    QStringList diffs;
-    for (const QJsonValue &v : toolCalls) {
-        const QJsonObject tc = v.toObject();
-        const QJsonObject func = tc["function"].toObject();
-        const QString name = func["name"].toString();
-        const QString argsJson = func["arguments"].toString();
-
-        QJsonObject args;
-        QJsonParseError err;
-        const QJsonDocument doc = QJsonDocument::fromJson(argsJson.toUtf8(), &err);
-        if (err.error == QJsonParseError::NoError && doc.isObject()) {
-            args = doc.object();
-        }
-
-        if (ToolExecutor::isWriteTool(name)) {
-            bool ok = false;
-            QString displayLabel;
-            const QString diff = ToolExecutor::previewDiff(workspaceRoot_, name, args, &ok, &displayLabel);
-            diffs << diff;
-        }
-    }
-    return diffs;
-}
-
 // ==================== 完成 / 失败 ====================
 void AgentEngine::doFinish(const QString &fullText)
 {
@@ -343,7 +247,6 @@ void AgentEngine::doFail(const QString &errorMessage)
 {
     disconnectClient();
     isRunning_ = false;
-    waitingConfirm_=false;
     emit stepChanged("✗ 任务失败");
     emit errorOccurred(errorMessage);
 }

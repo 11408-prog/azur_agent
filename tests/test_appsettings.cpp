@@ -56,38 +56,28 @@ TEST(AppSettingsTest, DefaultModelIsNotEmpty) {
     EXPECT_FALSE(model.isEmpty());
 }
 
-TEST(AppSettingsTest, DefaultPermissionIsZero) {
-    int perm = AppSettings::agentPermission();
-    EXPECT_EQ(perm, 0);
-}
-
-TEST(AppSettingsTest, StartupModeDefaultIsZero) {
-    // 清除可能残留的设置，确保读取的是默认值
-    QSettings settings;
-    settings.remove("startupMode");
-    int mode = AppSettings::startupMode();
-    EXPECT_EQ(mode, 0);
+TEST(AppSettingsTest, DefaultBaseUrlIsNotEmpty) {
+    QString url = AppSettings::baseUrl();
+    EXPECT_FALSE(url.isEmpty());
 }
 
 // ---------------------------------------------------------------------
-// 读写往返（round-trip）——之前完全没有覆盖过"写进去、读出来"这条路径
+// 读写往返（round-trip）
 // ---------------------------------------------------------------------
 
-TEST(AppSettingsTest, ChatModel_SetThenGet_RoundTrips) {
-    AppSettings::setChatModel("test-model-123");
-    EXPECT_EQ(AppSettings::chatModel(), "test-model-123");
+TEST(AppSettingsTest, Model_SetThenGet_RoundTrips) {
+    AppSettings::setModel("test-model-123");
+    EXPECT_EQ(AppSettings::model(), "test-model-123");
 }
 
-TEST(AppSettingsTest, ProjectModel_SetThenGet_RoundTrips) {
-    AppSettings::setProjectModel("project-model-abc");
-    EXPECT_EQ(AppSettings::projectModel(), "project-model-abc");
+TEST(AppSettingsTest, ApiKey_SetThenGet_RoundTrips) {
+    AppSettings::setApiKey("sk-test-key");
+    EXPECT_EQ(AppSettings::apiKey(), "sk-test-key");
 }
 
-TEST(AppSettingsTest, AgentPermission_SetThenGet_RoundTrips) {
-    AppSettings::setAgentPermission(1);
-    EXPECT_EQ(AppSettings::agentPermission(), 1);
-    AppSettings::setAgentPermission(0);
-    EXPECT_EQ(AppSettings::agentPermission(), 0);
+TEST(AppSettingsTest, BaseUrl_SetThenGet_RoundTrips) {
+    AppSettings::setBaseUrl("https://example.com/v1");
+    EXPECT_EQ(AppSettings::baseUrl(), "https://example.com/v1");
 }
 
 TEST(AppSettingsTest, ChatBgEnabled_BooleanRoundTrips) {
@@ -103,26 +93,21 @@ TEST(AppSettingsTest, RecentModels_ListRoundTrips) {
     EXPECT_EQ(AppSettings::recentModels(), models);
 }
 
-TEST(AppSettingsTest, ProjectHistory_JsonArrayRoundTrips) {
-    QJsonArray history;
-    QJsonObject entry;
-    entry["path"] = "/some/project";
-    entry["name"] = "SomeProject";
-    history.append(entry);
-
-    AppSettings::setProjectHistory(history);
-    QJsonArray readBack = AppSettings::projectHistory();
-
-    ASSERT_EQ(readBack.size(), 1);
-    EXPECT_EQ(readBack[0].toObject()["path"].toString(), "/some/project");
-}
-
 TEST(AppSettingsTest, BgOpacity_IntRoundTrips) {
     AppSettings::setBgOpacity(42);
     EXPECT_EQ(AppSettings::bgOpacity(), 42);
 }
 
-TEST(AppSettingsTest, LastProjectPath_StringRoundTrips) {
-    AppSettings::setLastProjectPath("/tmp/my-project");
-    EXPECT_EQ(AppSettings::lastProjectPath(), "/tmp/my-project");
+TEST(AppSettingsTest, ChatPromptMode_IntRoundTrips) {
+    AppSettings::setChatPromptMode(1);
+    EXPECT_EQ(AppSettings::chatPromptMode(), 1);
+    AppSettings::setChatPromptMode(0);
+    EXPECT_EQ(AppSettings::chatPromptMode(), 0);
+}
+
+TEST(AppSettingsTest, ShowStatusBar_BooleanRoundTrips) {
+    AppSettings::setShowStatusBar(false);
+    EXPECT_FALSE(AppSettings::showStatusBar());
+    AppSettings::setShowStatusBar(true);
+    EXPECT_TRUE(AppSettings::showStatusBar());
 }

@@ -30,7 +30,6 @@
 #include <QJsonDocument>
 #include <QTextBrowser>
 #include <QDateTime>
-#include <QStandardPaths>
 #include <QFile>
 #include <QMenu>
 #include <QTimer>
@@ -40,13 +39,9 @@
 #include "core/ai_client.h"
 #include "data/conversationmanager.h"
 #include "core/agent_engine.h"
-#include "app/modemanager.h"
 
-class ProjectPage;
-class ProjectSession;
 class ChatPageWidget;
 class SettingPageWidget;
-class ProjectConversationService;
 
 class MainWindow : public ElaWindow
 {
@@ -57,7 +52,6 @@ public:
     ~MainWindow() override;
 
 protected:
-    bool eventFilter(QObject *watched, QEvent *event) override;
     void closeEvent(QCloseEvent *event) override;
 
 private slots:
@@ -80,33 +74,24 @@ private:
     QString buildSystemPrompt() const;
 
     // ---- AppBar 按钮更新 ----
-    void updateAppBarForMode(ModeManager::AgentMode mode);
     void updateToggleButtonState();
 
     // ---- 导航页 ----
     ElaScrollPage *chatPage_;
     ElaScrollPage *settingPage_;
     ElaScrollPage *aboutPage_;
-    ElaScrollPage *projectPage_;
 
     // ---- 核心组件 ----
     DeepSeekClient *client_;
     AgentEngine *chatEngine_;
     ConversationManager *conversationManager_;
-    ConversationManager *projectConvMgr_;
-    ProjectConversationService *projectConvService_;
-    ModeManager *modeManager_;
 
     // ---- UI 组件 ----
     ChatPageWidget *chatPageWidget_;
     SettingPageWidget *settingsPageWidget_;
-    ProjectPage *projectPageWidget_;
 
     // ---- AppBar 按钮 ----
     ElaIconButton *sidebarToggleBtn_;
-    ElaIconButton *openFolderBtn_;
-    ElaIconButton *projectHistoryBtn_;
-    ElaIconButton *projectConvListBtn_;
 
     // ---- Chat 模式状态 ----
     QList<QJsonObject> messageHistory_;

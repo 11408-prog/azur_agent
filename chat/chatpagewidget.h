@@ -99,7 +99,7 @@ private:
     // ---- 消息区域 + 输入区域（共享组件，见 ui/conversationview.h） ----
     ConversationView *conversationView_ = nullptr;
 
-    // ---- 步骤指示器（Chat 模式独有，Project 模式用的是外部 ActivityPanel，两者不通用） ----
+    // ---- 步骤指示器（气泡内的 spinner + 文案，展示 Agent 当前执行到哪一步） ----
     QTimer *spinnerTimer_ = nullptr;
     int spinnerFrame_ = 0;
     QElapsedTimer *requestElapsed_ = nullptr;

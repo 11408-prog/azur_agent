@@ -13,24 +13,21 @@ class QVBoxLayout;
 class QTimer;
 class MessageBubbleWidget;
 
-// 聊天消息展示区域的共享实现：消息气泡列表 + 输入框 + 发送/停止按钮 + 流式内容节流刷新。
+// 聊天消息展示区域的实现：消息气泡列表 + 输入框 + 发送/停止按钮 + 流式内容节流刷新。
 //
-// 被 ChatPageWidget（Chat 模式）和 ProjectPage（Project 模式）共同持有，取代了原来两边
-// 各写一份、逻辑几乎一致的 appendMessage / clearChatDisplay / onChunkReceived /
-// flushAiContent / setInputEnabled / 输入框回车发送 / 视口尺寸变化 等实现
-//（加起来大约 150 行结构性重复代码）。
+// 由 ChatPageWidget 持有。历史上这个组件是为了消除 Chat/Project 两个模式各写一份
+// 几乎一致的 appendMessage / clearChatDisplay / onChunkReceived / flushAiContent /
+// setInputEnabled 等实现而抽出来的共享组件（Project 模式已移除，现在是唯一的调用方，
+// 但保留"只负责展示，不知道业务逻辑"的设计原则，方便以后再拆分调用方）。
 //
-// 设计原则：这个组件只负责"展示"，不知道 AgentEngine、不知道自己是 Chat 模式还是
-// Project 模式。发送按钮/回车键只会发出 sendRequested 信号，是否真的调用 AgentEngine、
-// 要不要做跨模式占用检查、回复完成后要做什么业务逻辑（比如自动生成标题、同步消息历史），
-// 都由外层（ChatPageWidget / ProjectPage）决定。
+// 设计原则：这个组件只负责"展示"，不知道 AgentEngine。发送按钮/回车键只会发出
+// sendRequested 信号，是否真的调用 AgentEngine、回复完成后要做什么业务逻辑
+//（比如自动生成标题、同步消息历史），都由 ChatPageWidget 决定。
 //
-// 页面特有的东西不在这里：
-//   - Chat 模式独有的"步骤指示器"（气泡内的 spinner + 文案）仍然由 ChatPageWidget
-//     自己管理，因为 Project 模式用的是外部的 ActivityPanel，两者不通用。
-//     ChatPageWidget 拿到 appendMessage() 返回的气泡指针后自行叠加步骤指示器逻辑。
-//   - "是否处于占用中"（isWaitingResponse_ / isActive_）这类业务状态仍然留在外层，
-//     这里只提供 setInputEnabled() 这个纯 UI 操作。
+// 页面特有的东西不在这里："步骤指示器"（气泡内的 spinner + 文案）仍然由
+// ChatPageWidget 自己管理，拿到 appendMessage() 返回的气泡指针后自行叠加。
+// "是否处于占用中"（isWaitingResponse_）这类业务状态仍然留在外层，
+// 这里只提供 setInputEnabled() 这个纯 UI 操作。
 class ConversationView : public QWidget
 {
     Q_OBJECT

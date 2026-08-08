@@ -6,8 +6,6 @@ target_sources(agent_ PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/agent_engine.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/tool_executor.h
     ${CMAKE_CURRENT_SOURCE_DIR}/tool_executor.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/git_executor.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/git_executor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/promptloader.h
     ${CMAKE_CURRENT_SOURCE_DIR}/promptloader.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/contextpolicy.h

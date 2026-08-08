@@ -1,8 +1,7 @@
 <RCC>
     <qresource prefix="/prompts">
-        <file alias="enterprise.md">resources/lite/enterprise.md</file>
-        <file alias="agent_core.md">resources/full/agent_core.md</file>
-        <file alias="enterprise_personality.md">resources/full/enterprise_personality.md</file>
-        <file alias="enterprise_quotes.md">resources/full/enterprise_quotes.md</file>
+        <file alias="lite/enterprise.md">resources/lite/enterprise.md</file>
+        <file alias="full/enterprise_personality.md">resources/full/enterprise_personality.md</file>
+        <file alias="full/enterprise_quotes.md">resources/full/enterprise_quotes.md</file>
     </qresource>
 </RCC>

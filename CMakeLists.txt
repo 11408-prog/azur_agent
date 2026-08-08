@@ -51,7 +51,6 @@ add_subdirectory(core)
 add_subdirectory(data)
 add_subdirectory(ui)
 add_subdirectory(chat)
-add_subdirectory(project)
 add_subdirectory(app)
 
 # ============ 链接 ============

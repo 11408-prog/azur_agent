@@ -224,7 +224,7 @@ void ChatPageWidget::setupUI()
     mainLayout->addWidget(chatArea);
 
     conversationView_->setStatusBarVisible(AppSettings::showStatusBar());
-    conversationView_->setStatusBarModelName(AppSettings::chatModel());
+    conversationView_->setStatusBarModelName(AppSettings::model());
 }
 
 QString ChatPageWidget::timeBasedGreeting() const

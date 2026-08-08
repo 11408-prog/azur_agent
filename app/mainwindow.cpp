@@ -2,10 +2,6 @@
 #include "chat/chatpagewidget.h"
 #include "app/settingpagewidget.h"
 #include "core/promptloader.h"
-#include "project/projecthistorydialog.h"
-#include "project/projectconvdialog.h"
-#include "data/projectconversationservice.h"
-#include "project/confirmdialogs.h"
 #include "data/appsettings.h"
 
 #include <ElaWindow.h>
@@ -30,7 +26,6 @@
 #include <QKeyEvent>
 #include <QLabel>
 #include <QListWidget>
-#include <QFileDialog>
 #include <QDir>
 #include <QMessageBox>
 #include <QCloseEvent>
@@ -39,7 +34,6 @@
 #include <QJsonDocument>
 #include <QTextBrowser>
 #include <QDateTime>
-#include <QStandardPaths>
 #include <QFile>
 #include <QMenu>
 #include <QAction>
@@ -66,10 +60,6 @@
 #include "core/ai_client.h"
 #include "data/conversationmanager.h"
 #include "core/agent_engine.h"
-#include "core/tool_executor.h"
-#include "project/projectsession.h"
-#include "project/projectpage.h"
-#include "app/modemanager.h"
 
 // 从可执行文件位置回溯到项目根目录，构建资源路径
 static QString projectRoot()
@@ -85,13 +75,10 @@ MainWindow::MainWindow(QWidget *parent)
     , aboutPage_(nullptr)
     , client_(new DeepSeekClient(this))
     , isWaitingResponse_(false)
-    , projectPageWidget_(nullptr)
     , chatEngine_(nullptr)
     , chatPageWidget_(nullptr)
     , settingsPageWidget_(nullptr)
     , sidebarToggleBtn_(nullptr)
-    , openFolderBtn_(nullptr)
-    , projectHistoryBtn_(nullptr)
 {
     qDebug()<<"[MAINWIN] 构造 MainWindow";
     setWindowTitle("Azur Agent");
@@ -123,19 +110,6 @@ MainWindow::MainWindow(QWidget *parent)
                 conversationManager_->conversationsMeta(), currentConversationId_);
         }
     });
-
-    // 项目会话管理器（所有项目共用）
-    QString appData = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
-    QString projectDataDir = appData + "/AzurAgent/data/project_chats";
-    projectConvMgr_ = new ConversationManager(this);
-    if (!projectConvMgr_->initialize(projectDataDir)) {
-        qWarning() << "Failed to initialize project conversation manager";
-    }
-
-    // 项目对话服务层
-    projectConvService_ = new ProjectConversationService(
-        projectConvMgr_, conversationManager_, this);
-    projectConvService_->migrateOldConversations();
 
     // ==================== 创建 UI 组件 ====================
 
@@ -227,11 +201,8 @@ MainWindow::MainWindow(QWidget *parent)
     connect(chatEngine_, &AgentEngine::stepChanged,
             this, [this](const QString &text) { chatPageWidget_->updateAiStep(text); });
 
-    // ---- 写操作确认弹窗（Chat 模式） ----
-    connect(chatEngine_, &AgentEngine::writeConfirmationRequired, this, [this](const QStringList &diffList) {
-        const bool accepted = ConfirmDialogs::confirmWriteOperations(this, diffList);
-        chatEngine_->confirmWrite(accepted);
-    });
+    // 注：不再注册任何写操作工具（write_file/apply_patch/run_command/git_*），
+    // AgentEngine::writeConfirmationRequired 因此永远不会触发，无需连接确认弹窗。
 
     // ---- 连接测试结果 ----
     connect(client_, &DeepSeekClient::connectionTested, this,
@@ -243,14 +214,6 @@ MainWindow::MainWindow(QWidget *parent)
         }
     });
 
-    // ==================== 创建 ModeManager ====================
-
-    modeManager_ = new ModeManager(this);
-    modeManager_->setConversationService(projectConvService_);
-
-    // ModeManager 信号 → UI 更新
-    connect(modeManager_, &ModeManager::modeChanged, this, &MainWindow::updateAppBarForMode);
-
     // ==================== 构建 UI 导航 ====================
 
     setupNavigation();
@@ -259,9 +222,6 @@ MainWindow::MainWindow(QWidget *parent)
         qWarning() << "systemPrompt_ 为空：未能从 prompt 文件读取到内容，"
                       "请确认 app.qrc 引用的资源文件存在。";
     }
-
-    // 设置 ModeManager 的 projectPageWidget (需在 setupNavigation 之后)
-    modeManager_->setProjectPageWidget(projectPageWidget_);
 
     // ==================== 加载背景图（设置开启时才加载） ====================
 
@@ -300,61 +260,27 @@ MainWindow::MainWindow(QWidget *parent)
     chatPageWidget_->refreshConversationList(
         conversationManager_->conversationsMeta(), currentConversationId_);
 
-    // ==================== 模式切换后刷新侧边栏按钮状态 ====================
+    // ==================== 侧边栏折叠按钮状态 ====================
 
     connect(chatPageWidget_, &ChatPageWidget::sidebarCollapsedChanged,
             this, &MainWindow::updateToggleButtonState);
-    connect(projectPageWidget_, &ProjectPage::leftPanelCollapsedChanged,
-            this, &MainWindow::updateToggleButtonState);
 
     connect(sidebarToggleBtn_, &ElaIconButton::clicked, this, [this]() {
-        if (modeManager_->currentMode() == ModeManager::AgentMode::Project && projectPageWidget_) {
-            projectPageWidget_->togglePanel(true);
-        } else {
-            chatPageWidget_->toggleSidebar();
-        }
-    });
-
-    // ==================== 项目对话持久化 ====================
-
-    connect(projectPageWidget_, &ProjectPage::conversationUpdated,
-            this, [this](const QList<QJsonObject> &) {
-        modeManager_->saveConversation();
-    });
-
-    connect(projectPageWidget_, &ProjectPage::titleChanged,
-            this, [this](const QString &) {
-        modeManager_->saveEntry();
+        chatPageWidget_->toggleSidebar();
     });
 
     updateToggleButtonState();
-    updateAppBarForMode(ModeManager::AgentMode::Chat);
 }
 
 // ==================== AppBar 按钮状态 ====================
-
-void MainWindow::updateAppBarForMode(ModeManager::AgentMode mode)
-{
-    const bool isProject = (mode == ModeManager::AgentMode::Project);
-    if (openFolderBtn_) openFolderBtn_->setVisible(isProject);
-    if (projectHistoryBtn_) projectHistoryBtn_->setVisible(isProject);
-    if (projectConvListBtn_) projectConvListBtn_->setVisible(isProject);
-    updateToggleButtonState();
-}
 
 void MainWindow::updateToggleButtonState()
 {
     if (!sidebarToggleBtn_) return;
 
-    if (modeManager_->currentMode() == ModeManager::AgentMode::Project && projectPageWidget_) {
-        bool collapsed = projectPageWidget_->isLeftPanelCollapsed();
-        sidebarToggleBtn_->setAwesome(collapsed ? ElaIconType::Sidebar : ElaIconType::SidebarFlip);
-        sidebarToggleBtn_->setToolTip(collapsed ? "显示项目文件" : "隐藏项目文件");
-    } else {
-        bool collapsed = chatPageWidget_->isSidebarCollapsed();
-        sidebarToggleBtn_->setAwesome(collapsed ? ElaIconType::Sidebar : ElaIconType::SidebarFlip);
-        sidebarToggleBtn_->setToolTip(collapsed ? "显示历史记录" : "隐藏历史记录");
-    }
+    bool collapsed = chatPageWidget_->isSidebarCollapsed();
+    sidebarToggleBtn_->setAwesome(collapsed ? ElaIconType::Sidebar : ElaIconType::SidebarFlip);
+    sidebarToggleBtn_->setToolTip(collapsed ? "显示历史记录" : "隐藏历史记录");
 }
 
 // ==================== 导航设置 ====================
@@ -405,75 +331,11 @@ void MainWindow::setupNavigation()
         sidebarToggleBtn_->setToolTip(collapsed ? "显示历史记录" : "隐藏历史记录");
     });
 
-    openFolderBtn_ = new ElaIconButton(ElaIconType::FolderOpen, 16, 30, 30, appBarActions);
-    openFolderBtn_->setToolTip("打开项目文件夹");
-    openFolderBtn_->setVisible(false);
-    connect(openFolderBtn_, &ElaIconButton::clicked, this, [this]() {
-        modeManager_->saveConversation();
-        modeManager_->saveEntry();
-
-        const QString dir = QFileDialog::getExistingDirectory(this, "选择项目目录");
-        if (!dir.isEmpty()) {
-            AppSettings::setLastProjectPath(dir);
-            modeManager_->openProject(dir);
-        }
-    });
-
-    projectHistoryBtn_ = new ElaIconButton(ElaIconType::ClockRotateLeft, 16, 30, 30, appBarActions);
-    projectHistoryBtn_->setToolTip("项目历史记录");
-    projectHistoryBtn_->setVisible(false);
-    connect(projectHistoryBtn_, &ElaIconButton::clicked, this, [this]() {
-        ProjectHistoryDialog dlg(this);
-        connect(&dlg, &ProjectHistoryDialog::projectSelected,
-                this, [this](const QString &path, const QString &convId) {
-            modeManager_->switchToEntry(path, convId);
-        });
-        dlg.exec();
-    });
-
-    projectConvListBtn_ = new ElaIconButton(ElaIconType::CommentDots, 16, 30, 30, appBarActions);
-    projectConvListBtn_->setToolTip("当前项目对话列表");
-    projectConvListBtn_->setVisible(false);
-    connect(projectConvListBtn_, &ElaIconButton::clicked, this, [this]() {
-        ProjectSession *proj = modeManager_->currentProject();
-        if (!proj || proj->projectPath.isEmpty()) return;
-        ProjectConvDialog dlg(projectConvMgr_,
-                               proj->projectPath,
-                               modeManager_->currentConversationId(), this);
-        connect(&dlg, &ProjectConvDialog::conversationSelected,
-                this, [this](const QString &convId) {
-            modeManager_->switchToConversation(convId);
-        });
-        connect(&dlg, &ProjectConvDialog::newConversationRequested,
-                this, [this]() {
-            ProjectSession *proj = modeManager_->currentProject();
-            if (!proj || proj->projectPath.isEmpty()) return;
-            modeManager_->saveConversation();
-            const QString newId = projectConvService_->createConversation(proj->projectPath);
-            modeManager_->setConversationId(newId);
-            projectPageWidget_->restoreConversation({});
-            modeManager_->saveEntry();
-        });
-        dlg.exec();
-    });
-
-    appBarActionsLayout->addWidget(openFolderBtn_, 0, Qt::AlignTop);
-    appBarActionsLayout->addWidget(projectConvListBtn_, 0, Qt::AlignTop);
-    appBarActionsLayout->addWidget(projectHistoryBtn_, 0, Qt::AlignTop);
     appBarActionsLayout->addWidget(sidebarToggleBtn_, 0, Qt::AlignTop);
     appBarActionsLayout->addStretch();
     setCustomWidget(ElaAppBarType::LeftArea, appBarActions);
 
     addPageNode("对话", chatPage_, ElaIconType::CommentDots);
-
-    // 项目模式页面
-    projectPage_ = new ElaScrollPage(this);
-    projectPage_->setWindowTitle("项目模式");
-    projectPageWidget_ = new ProjectPage(chatEngine_, projectPage_);
-    projectPage_->addCentralWidget(projectPageWidget_, true, true, 0.5);
-    projectPage_->setTitleVisible(false);
-    projectPageWidget_->installEventFilter(this);
-    addPageNode("项目", projectPage_, ElaIconType::Code);
 
     QString settingKey, aboutKey;
     addFooterNode("设置", settingPage_, settingKey, 0, ElaIconType::GearComplex);
@@ -509,8 +371,8 @@ void MainWindow::setupAboutPage()
     aboutLayout->addWidget(line, 0, Qt::AlignCenter);
 
     ElaText *desc = new ElaText(
-        "基于 Qt 6.11 + ElaWidgetTools 构建的智能助手\n"
-        "支持 AI 对话、文件操作、代码生成等功能",
+        "基于 Qt 6.11 + ElaWidgetTools 构建的角色扮演聊天助手\n"
+        "与「企业」对话，感受碧蓝航线的语气与风格",
         aboutContent);
     desc->setTextStyle(ElaTextType::Body);
     desc->setAlignment(Qt::AlignCenter);
@@ -544,14 +406,14 @@ void MainWindow::onSendClicked()
     qDebug()<<"[MAINWIN] onSendClicked | isWaitingResponse_="<<isWaitingResponse_;
     const QString text = lastUserMessage_;
 
-    QString apiKey = settingsPageWidget_->chatApiKey();
+    QString apiKey = settingsPageWidget_->apiKey();
     if (apiKey.isEmpty()) {
         ElaMessageBar::warning(ElaMessageBarType::TopRight, "提示",
                                "请先在设置中填写 API Key", 3000);
         return;
     }
 
-    const QUrl baseUrl(settingsPageWidget_->chatBaseUrl());
+    const QUrl baseUrl(settingsPageWidget_->baseUrl());
     if (!baseUrl.isValid() || baseUrl.host().isEmpty()
         || (baseUrl.scheme() != "http" && baseUrl.scheme() != "https")) {
         ElaMessageBar::warning(ElaMessageBarType::TopRight, "提示",
@@ -559,25 +421,11 @@ void MainWindow::onSendClicked()
         return;
     }
 
-    if (settingsPageWidget_->chatModelName().isEmpty()) {
+    if (settingsPageWidget_->modelName().isEmpty()) {
         ElaMessageBar::warning(ElaMessageBarType::TopRight, "提示",
                                "请先在设置中填写模型名称", 3000);
         return;
     }
-
-    // chatEngine_ 是 Chat 模式和 Project 模式共用的同一个实例：如果此刻并不是
-    // Chat 自己在等回复（isWaitingResponse_ 为 false），但引擎却处于占用状态，
-    // 说明 Project 模式正有一个请求在跑。这时如果照常调用 start()，
-    // AgentEngine::start() 内部会先 cancel() 掉 Project 那边的请求且不发出任何
-    // 信号通知，导致 Project 页面的输入框永久卡在"等待中"。这里直接拦下并提示用户。
-    if (!isWaitingResponse_ && chatEngine_->isBusy()) {
-        ElaMessageBar::warning(ElaMessageBarType::TopRight, "提示",
-                               "项目模式正有请求在处理中，请稍后再发送，或先在项目页取消", 3000);
-        return;
-    }
-
-    // 同步"Agent 权限"设置（每次确认 / 自动执行）到引擎
-    chatEngine_->setAutoExecute(AppSettings::agentPermission() == 1);
 
     chatPageWidget_->appendMessage(text, true);
     lastUserMessage_ = text;
@@ -591,7 +439,7 @@ void MainWindow::onSendClicked()
     chatPageWidget_->appendMessage(QString(), false, true);
 
     // 启动 AgentEngine
-    chatEngine_->start(apiKey, settingsPageWidget_->chatBaseUrl(), settingsPageWidget_->chatModelName(),
+    chatEngine_->start(apiKey, settingsPageWidget_->baseUrl(), settingsPageWidget_->modelName(),
                        messageHistory_, systemPrompt_, QJsonArray(), QString());
     chatPageWidget_->setInputEnabled(false);
     isWaitingResponse_ = true;
@@ -601,19 +449,16 @@ void MainWindow::onSendClicked()
 
 void MainWindow::onApiChunkReceived(const QString &delta)
 {
-    if (modeManager_->currentMode() != ModeManager::AgentMode::Chat) return;
     chatPageWidget_->onChunkReceived(delta);
 }
 
 void MainWindow::onApiResponseCompleted(const QString &fullText)
 {
-    if (modeManager_->currentMode() != ModeManager::AgentMode::Chat) return;
-
     qDebug()<<"[MAINWIN] onApiResponseCompleted | 文本长度="<<fullText.length();
 
     chatPageWidget_->onResponseCompleted(fullText);
 
-    settingsPageWidget_->rememberModel(settingsPageWidget_->chatModelName());
+    settingsPageWidget_->rememberModel(settingsPageWidget_->modelName());
     messageHistory_ = chatEngine_->messageHistory();
 
     // 自动生成标题
@@ -641,7 +486,6 @@ void MainWindow::onApiResponseCompleted(const QString &fullText)
 
 void MainWindow::onApiError(const QString &errorMessage)
 {
-    if (modeManager_->currentMode() != ModeManager::AgentMode::Chat) return;
     qDebug()<<"[MAINWIN] onApiError | errorMessage="<<errorMessage;
 
     chatPageWidget_->onResponseError(errorMessage);
@@ -703,20 +547,6 @@ void MainWindow::onNewConversation()
     chatPageWidget_->showGreeting();
     chatPageWidget_->refreshConversationList(
         conversationManager_->conversationsMeta(), currentConversationId_);
-}
-
-// ==================== 事件过滤 ====================
-
-bool MainWindow::eventFilter(QObject *watched, QEvent *event)
-{
-    if (watched == projectPageWidget_) {
-        if (event->type() == QEvent::Show) {
-            QTimer::singleShot(0, this, [this]() { modeManager_->enterProjectMode(this); });
-        } else if (event->type() == QEvent::Hide) {
-            modeManager_->enterChatMode();
-        }
-    }
-    return ElaWindow::eventFilter(watched, event);
 }
 
 // ==================== 窗口关闭 ====================
