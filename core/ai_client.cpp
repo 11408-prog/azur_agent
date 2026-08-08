@@ -179,7 +179,11 @@ void DeepSeekClient::onReadyRead()
 
     const QByteArray data = currentReply_->readAll();
     rawResponseBuffer_ += data;
+    processIncomingData(data);
+}
 
+void DeepSeekClient::processIncomingData(const QByteArray &data)
+{
     // 一次 readyRead() 拿到的字节，不保证正好是完整的一行或几行——
     // 一条 "data: {...}" 完全可能被网络分包从中间切断，分两次 readyRead() 到达。
     // 所以要维护一个持久缓冲：新数据追加进去，只处理已经出现完整 '\n' 的那些行，
@@ -244,6 +248,22 @@ void DeepSeekClient::onReadyRead()
     sseLineBuffer_ = sseLineBuffer_.mid(searchFrom);
 }
 
+QJsonArray DeepSeekClient::pendingToolCallsAsJson() const
+{
+    QJsonArray toolCalls;
+    for (auto it = pendingToolCalls_.constBegin(); it != pendingToolCalls_.constEnd(); ++it) {
+        QJsonObject tc;
+        tc["id"] = it.value().id;
+        tc["type"] = "function";
+        QJsonObject func;
+        func["name"] = it.value().name;
+        func["arguments"] = it.value().argumentsJson;
+        tc["function"] = func;
+        toolCalls.append(tc);
+    }
+    return toolCalls;
+}
+
 void DeepSeekClient::onFinished()
 {
     timeoutTimer_->stop();
@@ -272,18 +292,7 @@ void DeepSeekClient::onFinished()
     // 流式响应里模型请求了工具调用：把分片拼好的完整工具调用列表发出去，
     // 这一轮到此为止，不算最终回复（responseCompleted 不会触发）
     if (sawToolCallFinish_ && !pendingToolCalls_.isEmpty()) {
-        QJsonArray toolCalls;
-        for (auto it = pendingToolCalls_.constBegin(); it != pendingToolCalls_.constEnd(); ++it) {
-            QJsonObject tc;
-            tc["id"] = it.value().id;
-            tc["type"] = "function";
-            QJsonObject func;
-            func["name"] = it.value().name;
-            func["arguments"] = it.value().argumentsJson;
-            tc["function"] = func;
-            toolCalls.append(tc);
-        }
-        emit toolCallsReceived(toolCalls);
+        emit toolCallsReceived(pendingToolCallsAsJson());
         return;
     }
 
