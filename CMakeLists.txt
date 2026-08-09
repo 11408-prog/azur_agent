@@ -62,6 +62,11 @@ target_link_libraries(agent_
         Ela::Widgets
 )
 
+# ============ 附加 Windows 图标资源 ============
+if(WIN32)
+    target_sources(agent_ PRIVATE app/app.rc)
+endif()
+
 # ============ 安装规则 ============
 install(TARGETS agent_
     BUNDLE  DESTINATION .

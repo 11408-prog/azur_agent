@@ -9,6 +9,7 @@
 #include<QTextStream>
 #include<QDebug>
 #include<QDir>
+#include<QIcon>
 
 //计算日志文件存放路径
 QString getLogFilePath()
@@ -57,10 +58,13 @@ int main(int argc, char *argv[])
 
     QApplication app(argc,argv);
 
+    app.setWindowIcon(QIcon(":/icons/app.png"));
+
     //获取ela初始化
     ElaApplication::getInstance()->init();
     qInstallMessageHandler(logToFile);//安装日志钩子
     qDebug()<<"========程序运行成功========";
+    app.setWindowIcon(QIcon(":/app/resources/app_icon.png"));
     //创建并显示窗口
     MainWindow w;
     w.showMaximized();

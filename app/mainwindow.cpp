@@ -55,10 +55,16 @@
 #include <QPainter>
 #include <QtGlobal>
 #include <QPainterPath>
+#include <QIcon>
 
 #include "core/ai_client.h"
 #include "data/conversationmanager.h"
 #include "core/agent_engine.h"
+
+#ifdef Q_OS_WIN
+#include <windows.h>
+#include <windowsx.h>
+#endif
 
 // 从可执行文件位置回溯到项目根目录，构建资源路径
 static QString projectRoot()
@@ -271,6 +277,20 @@ MainWindow::MainWindow(QWidget *parent)
     });
 
     updateToggleButtonState();
+
+    // ==================== 设置窗口图标 ====================
+
+    this->setWindowIcon(QIcon(":/icons/app.png"));
+
+    // ==================== 注册全局热键 ====================
+
+#ifdef Q_OS_WIN
+    if (!registerHotkey()) {
+        qWarning() << "Failed to register global hotkey (Ctrl+Alt+Q).";
+        // 可在此弹窗提示，但非必须
+    }
+#endif
+
 }
 
 // ==================== AppBar 按钮状态 ====================
@@ -548,6 +568,10 @@ void MainWindow::closeEvent(QCloseEvent *event)
 MainWindow::~MainWindow()
 {
     qDebug()<<"[MAINWIN] 析构 MainWindow";
+
+#ifdef Q_OS_WIN
+    unregisterHotkey();
+#endif
 }
 
 // ==================== 设置持久化 ====================
@@ -571,4 +595,51 @@ QString MainWindow::buildSystemPrompt() const
 {
     // 统一走 PromptLoader，避免两处实现不一致
     return PromptLoader::buildChatSystemPrompt(AppSettings::chatPromptMode());
+}
+
+
+// ==================== 全局热键实现 ====================
+
+#ifdef Q_OS_WIN
+bool MainWindow::registerHotkey()
+{
+    // 注册 Ctrl+Alt+Q
+    // 注意：第二个参数是热键 ID，第三个是修饰键组合（MOD_CONTROL | MOD_ALT），第四个是虚拟键码 'Q'
+    return ::RegisterHotKey((HWND)this->winId(), HOTKEY_ID, MOD_CONTROL | MOD_ALT, 'E');
+}
+
+void MainWindow::unregisterHotkey()
+{
+    ::UnregisterHotKey((HWND)this->winId(), HOTKEY_ID);
+}
+
+bool MainWindow::nativeEvent(const QByteArray &eventType, void *message, qintptr *result)
+{
+    // 只处理 Windows 消息
+    if (eventType == "windows_generic_MSG") {
+        MSG *msg = static_cast<MSG*>(message);
+        if (msg->message == WM_HOTKEY) {
+            // 判断热键 ID 是否匹配
+            if (msg->wParam == HOTKEY_ID) {
+                onGlobalHotkeyTriggered();
+                *result = 0;
+                return true;   // 消息已处理，不再传递
+            }
+        }
+    }
+    // 其他消息交给基类处理
+    return ElaWindow::nativeEvent(eventType, message, result);
+}
+#endif
+
+void MainWindow::onGlobalHotkeyTriggered()
+{
+    // 自定义行为：切换窗口显示/隐藏
+    if (this->isVisible()) {
+        this->hide();
+    } else {
+        this->show();
+        this->raise();
+        this->activateWindow();
+    }
 }

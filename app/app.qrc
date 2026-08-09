@@ -3,5 +3,9 @@
         <file alias="lite/enterprise.md">resources/lite/enterprise.md</file>
         <file alias="full/enterprise_personality.md">resources/full/enterprise_personality.md</file>
         <file alias="full/enterprise_quotes.md">resources/full/enterprise_quotes.md</file>
+
+        <file alias="icons/app.ico">resources/app.ico</file>
+        <file alias="icons/app.png">resources/app.png</file>
+
     </qresource>
 </RCC>

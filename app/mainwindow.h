@@ -1,6 +1,10 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
+#ifdef Q_OS_WIN
+#include <windows.h>
+#endif
+
 #include <ElaWindow.h>
 #include <ElaScrollPage.h>
 #include <ElaScrollArea.h>
@@ -52,6 +56,7 @@ public:
 
 protected:
     void closeEvent(QCloseEvent *event) override;
+    bool nativeEvent(const QByteArray &eventType, void *message, qintptr *result) override;
 
 private slots:
     void onNewConversation();
@@ -62,7 +67,15 @@ private slots:
     void onApiResponseCompleted(const QString &fullText);
     void onApiError(const QString &errorMessage);
 
+    void onGlobalHotkeyTriggered();
+
 private:
+
+#ifdef Q_OS_WIN
+    static constexpr UINT HOTKEY_ID = 1;      // 热键唯一 ID
+    bool registerHotkey();                    // 注册热键
+    void unregisterHotkey();                  // 注销热键
+#endif
     // ---- UI 构建 ----
     void setupNavigation();
     void setupAboutPage();
