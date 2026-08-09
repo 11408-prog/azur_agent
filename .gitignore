@@ -4,6 +4,7 @@ build*/
 cmake-build-*/
 
 # IDE
+.qtcreator
 .idea/
 .vscode/
 *.user
