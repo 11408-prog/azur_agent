@@ -1,9 +1,11 @@
 #include "ui/messagebubblewidget.h"
 #include "ui/markdownrenderer.h"
 #include "ui/uiconstants.h"
+#include "ui/theme.h"
 
 #include <ElaText.h>
 #include <ElaMessageBar.h>
+#include <ElaTheme.h>
 
 #include <QLabel>
 #include <QFrame>
@@ -111,10 +113,6 @@ void MessageBubbleWidget::initUI()
     contentBrowser_->setOpenExternalLinks(false);
     contentBrowser_->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     contentBrowser_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    contentBrowser_->setStyleSheet(
-        "QTextBrowser { background: transparent; border: none; }"
-        "QTextBrowser a { color: #0f5ff0; }"
-        );
     contentBrowser_->setMinimumHeight(0);
     contentBrowser_->setVisible(false);
 
@@ -137,49 +135,91 @@ void MessageBubbleWidget::initUI()
     bubbleLayout_->addWidget(contentBrowser_);
 
     timeLabel_ = new QLabel(bubble_);
-    timeLabel_->setStyleSheet("font-size: 11px; color: rgba(100, 100, 110, 0.7); background: transparent;");
     timeLabel_->setAlignment(isUser_ ? Qt::AlignRight : Qt::AlignLeft);
     bubbleLayout_->addWidget(timeLabel_);
 
-    // 用户 / AI 气泡分别上色。现在 bubble_ 是普通 QFrame + WA_StyledBackground，
-    // 用 objectName 选择器精确定位，避免样式意外级联到子控件上。
     if (isUser_) {
-        bubble_->setStyleSheet(
-            "QFrame#MessageBubbleFrame {"
-            "   background: rgba(225, 238, 255, 0.9);"
-            "   border: 1px solid rgba(255, 255, 255, 0.5);"
-            "   border-radius: 16px;"
-            "   border-bottom-right-radius: 4px;"
-            "}"
-            );
-        userText_->setStyleSheet("color: #2a3a5a;");
+        rowLayout->addStretch();
+        rowLayout->addWidget(bubble_, 0, Qt::AlignTop);
+        rowLayout->addWidget(avatar_, 0, Qt::AlignTop);
     } else {
-        bubble_->setStyleSheet(
-            "QFrame#MessageBubbleFrame {"
-            "   background: rgba(240, 244, 250, 0.92);"
-            "   border: 1px solid rgba(150, 170, 200, 0.3);"
-            "   border-radius: 16px;"
-            "   border-bottom-left-radius: 4px;"
-            "}"
-            );
-        userText_->setStyleSheet("color: #2a2a3a;");
+        rowLayout->addWidget(avatar_, 0, Qt::AlignTop);
+        rowLayout->addWidget(bubble_, 0, Qt::AlignTop);
+        rowLayout->addStretch();
     }
 
-    if (isUser_) {
-        rowLayout->addStretch();
-        rowLayout->addWidget(bubble_, 0, Qt::AlignTop);
-        rowLayout->addWidget(avatar_, 0, Qt::AlignTop);
-    } else {
-        rowLayout->addWidget(avatar_, 0, Qt::AlignTop);
-        rowLayout->addWidget(bubble_, 0, Qt::AlignTop);
-        rowLayout->addStretch();
+    // 主题切换时重刷气泡 QSS + 已渲染的 Markdown
+    connect(eTheme, &ElaTheme::themeModeChanged, this, [this](ElaThemeType::ThemeMode) {
+        applyTheme();
+    });
+    applyTheme();
+}
+
+void MessageBubbleWidget::applyTheme()
+{
+    // 气泡：用户 = userBubbleBg，AI = aiBubbleBg；圆角 16→12，尾角 4，边框淡
+    const QString bubbleQss = QString(
+        "QFrame#MessageBubbleFrame {"
+        "   background: %1;"
+        "   border: 1px solid %2;"
+        "   border-radius: 12px;"
+        "   border-bottom-%3-radius: 4px;"
+        "}"
+        )
+        .arg(UiTheme::qss(isUser_ ? UiTheme::userBubbleBg() : UiTheme::aiBubbleBg()),
+             UiTheme::qss(UiTheme::border()),
+             isUser_ ? QStringLiteral("right") : QStringLiteral("left"));
+    bubble_->setStyleSheet(bubbleQss);
+
+    // 内容区：正文 + 链接色（流式纯文本前景色也由这里控制）
+    contentBrowser_->setStyleSheet(QString(
+        "QTextBrowser { background: transparent; border: none; color: %1; }"
+        "QTextBrowser a { color: %2; }"
+        )
+        .arg(UiTheme::qss(UiTheme::textPrimary()),
+             UiTheme::qss(UiTheme::linkColor())));
+
+    if (timeLabel_) {
+        timeLabel_->setStyleSheet(
+            QString("font-size: 11px; color: %1; background: transparent;")
+                .arg(UiTheme::qss(UiTheme::textSecondary())));
+    }
+
+    // 步骤指示器：旋转中 = accent；已收尾 ✓/✗ 保留原来的 success/danger 色
+    if (stepIcon_) {
+        const QString t = stepIcon_->text();
+        if (t != QStringLiteral("✓") && t != QStringLiteral("✗")) {
+            stepIcon_->setStyleSheet(QString("color:%1; font-size:13px; background:transparent;")
+                                         .arg(UiTheme::qss(UiTheme::accent())));
+        }
+    }
+    if (stepText_) {
+        stepText_->setStyleSheet(QString("color:%1; font-size:12px; background:transparent;")
+                                     .arg(UiTheme::qss(UiTheme::textSecondary())));
+    }
+
+    // 头像占位（无图片时用 accent 底）
+    if (avatar_) {
+        const QPixmap pm = avatar_->pixmap(Qt::ReturnByValue);
+        if (pm.isNull()) {
+            avatar_->setStyleSheet(QStringLiteral(
+                "background-color: %1; color: white;"
+                "border-radius: 20px; font-weight: bold; font-size: 16px;"
+                )
+                .arg(UiTheme::qss(UiTheme::accent())));
+        }
+    }
+
+    // 已渲染的 Markdown 重刷一遍（深色下颜色才会正确刷新）
+    if (!currentMarkdown_.isEmpty()) {
+        renderMarkdown(currentMarkdown_);
     }
 }
 
 QLabel *MessageBubbleWidget::createAvatar()
 {
     QLabel *avatar = new QLabel(this);
-    avatar->setFixedSize(44, 44);
+    avatar->setFixedSize(40, 40);
     avatar->setAlignment(Qt::AlignCenter);
 
     if (s_avatarDir.isEmpty()) {
@@ -190,7 +230,7 @@ QLabel *MessageBubbleWidget::createAvatar()
              << "appDir:" << QCoreApplication::applicationDirPath();
     QPixmap pix(avatarFile);
     if (!pix.isNull()) {
-        static constexpr int kAvatarSize = 44;
+        static constexpr int kAvatarSize = 40;
         static constexpr int kRenderScale = 2;
         int renderSize = kAvatarSize * kRenderScale;
 
@@ -213,8 +253,8 @@ QLabel *MessageBubbleWidget::createAvatar()
         avatar->setText(isUser_ ? "U" : "E");
         avatar->setStyleSheet(QStringLiteral(
                                   "background-color: %1; color: white;"
-                                  "border-radius: 22px; font-weight: bold; font-size: 17px;"
-                                  ).arg(isUser_ ? "#0f5ff0" : "#5a8ae6"));
+                                  "border-radius: 20px; font-weight: bold; font-size: 16px;"
+                                  ).arg(UiTheme::qss(UiTheme::accent())));
     }
     return avatar;
 }
@@ -227,6 +267,12 @@ void MessageBubbleWidget::setUserContent(const QString &text)
 }
 
 void MessageBubbleWidget::setAiContent(const QString &markdown)
+{
+    currentMarkdown_ = markdown;
+    renderMarkdown(markdown);
+}
+
+void MessageBubbleWidget::renderMarkdown(const QString &markdown)
 {
     userText_->setVisible(false);
     contentBrowser_->setVisible(true);
@@ -247,8 +293,8 @@ void MessageBubbleWidget::setAiContent(const QString &markdown)
             }
         }
         QString preview = (endPos > 0) ? markdown.left(endPos) : markdown;
-        preview += "\n\n---\n\n<a href=\"azur://showall\" style=\"color: #0f5ff0; text-decoration: none;\">"
-                   "[显示全部内容]</a>";
+        preview += "\n\n---\n\n<a href=\"azur://showall\" style=\"color: " + UiTheme::linkColor().name()
+                   + "; text-decoration: none;\">[显示全部内容]</a>";
 
         QStringList codeBlocks;
         contentBrowser_->setHtml(MarkdownRenderer::toHtml(preview, &codeBlocks));
@@ -297,6 +343,7 @@ void MessageBubbleWidget::setAiStreamingContent(const QString &plainText)
     if (contentSpinnerTimer_ && contentSpinnerTimer_->isActive()) {
         contentSpinnerTimer_->stop();
     }
+    currentMarkdown_.clear();   // 流式纯文本无需按 Markdown 重渲染
     userText_->setVisible(false);
     contentBrowser_->setVisible(true);
     contentBrowser_->setPlainText(plainText);
@@ -332,10 +379,12 @@ void MessageBubbleWidget::createStepIndicator()
     stepRowLayout->setSpacing(6);
 
     stepIcon_ = new QLabel(stepRow_);
-    stepIcon_->setStyleSheet("color:#5a8ae6; font-size:13px; background:transparent;");
     stepIcon_->setFixedWidth(16);
+    stepIcon_->setStyleSheet(QString("color:%1; font-size:13px; background:transparent;")
+                                 .arg(UiTheme::qss(UiTheme::accent())));
     stepText_ = new QLabel("正在连接 DeepSeek...", stepRow_);
-    stepText_->setStyleSheet("color:#8a8a9a; font-size:12px; background:transparent;");
+    stepText_->setStyleSheet(QString("color:%1; font-size:12px; background:transparent;")
+                                 .arg(UiTheme::qss(UiTheme::textSecondary())));
 
     stepRowLayout->addWidget(stepIcon_);
     stepRowLayout->addWidget(stepText_, 1);
@@ -353,13 +402,13 @@ void MessageBubbleWidget::finishStep(bool success, const QString &finalText)
     if (!stepRow_) return;
     if (stepIcon_) {
         stepIcon_->setText(success ? QStringLiteral("✓") : QStringLiteral("✗"));
-        stepIcon_->setStyleSheet(success
-                                     ? "color:#7aaa7a; font-size:13px; background:transparent;"
-                                     : "color:#d95555; font-size:13px; background:transparent;");
+        stepIcon_->setStyleSheet(QString("color:%1; font-size:13px; background:transparent;")
+                                     .arg(UiTheme::qss(success ? UiTheme::success() : UiTheme::danger())));
     }
     if (stepText_) {
         stepText_->setText(finalText);
-        stepText_->setStyleSheet("color:#8a8a9a; font-size:11px; background:transparent;");
+        stepText_->setStyleSheet(QString("color:%1; font-size:11px; background:transparent;")
+                                     .arg(UiTheme::qss(UiTheme::textSecondary())));
     }
     if (success) {
         stepRow_->setVisible(false);

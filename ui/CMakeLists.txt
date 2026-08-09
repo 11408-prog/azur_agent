@@ -1,5 +1,6 @@
 #ui
 target_sources(agent_ PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/theme.h
     ${CMAKE_CURRENT_SOURCE_DIR}/messagebubblewidget.h
     ${CMAKE_CURRENT_SOURCE_DIR}/messagebubblewidget.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/markdownrenderer.h

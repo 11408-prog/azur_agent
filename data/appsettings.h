@@ -23,6 +23,9 @@ QStringList recentModels();
 void setRecentModels(const QStringList &models);
 
 // ---- UI ----
+int themeMode();            // 0=浅色, 1=深色, 2=跟随系统
+void setThemeMode(int mode);
+
 int bgOpacity();
 void setBgOpacity(int opacity);
 

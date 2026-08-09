@@ -111,3 +111,18 @@ TEST(AppSettingsTest, ShowStatusBar_BooleanRoundTrips) {
     AppSettings::setShowStatusBar(true);
     EXPECT_TRUE(AppSettings::showStatusBar());
 }
+
+TEST(AppSettingsTest, ThemeMode_DefaultIsFollowSystem) {
+    // 默认 2 = 跟随系统
+    AppSettings::setThemeMode(2);
+    EXPECT_EQ(AppSettings::themeMode(), 2);
+}
+
+TEST(AppSettingsTest, ThemeMode_IntRoundTrips) {
+    AppSettings::setThemeMode(0);
+    EXPECT_EQ(AppSettings::themeMode(), 0);
+    AppSettings::setThemeMode(1);
+    EXPECT_EQ(AppSettings::themeMode(), 1);
+    AppSettings::setThemeMode(2);
+    EXPECT_EQ(AppSettings::themeMode(), 2);
+}

@@ -1,5 +1,6 @@
 #include "app/settingpagewidget.h"
 #include "data/appsettings.h"
+#include "ui/theme.h"
 
 #include <ElaLineEdit.h>
 #include <ElaComboBox.h>
@@ -8,6 +9,7 @@
 #include <ElaMessageBar.h>
 #include <ElaIcon.h>
 #include <ElaIconButton.h>
+#include <ElaTheme.h>
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -75,19 +77,20 @@ void SettingPageWidget::rememberModel(const QString &model)
     saveSettings();
 }
 
-// 辅助：创建卡片容器（QFrame + 圆角阴影样式）
+// 辅助：创建卡片容器（QFrame + 圆角样式，背景走主题色板）
 static QFrame* createCard(QWidget *parent)
 {
     QFrame *card = new QFrame(parent);
     card->setObjectName(QStringLiteral("SettingCard"));
     card->setAttribute(Qt::WA_StyledBackground, true);
     card->setStyleSheet(
-        "QFrame#SettingCard {"
-        "  background-color: rgba(255, 255, 255, 0.82);"
-        "  border: 1px solid rgba(0, 0, 0, 0.05);"
-        "  border-radius: 12px;"
-        "}"
-        );
+        QString("QFrame#SettingCard {"
+                "  background-color: %1;"
+                "  border: 1px solid %2;"
+                "  border-radius: 12px;"
+                "}")
+            .arg(UiTheme::qss(UiTheme::surface()),
+                 UiTheme::qss(UiTheme::border())));
     return card;
 }
 
@@ -114,7 +117,7 @@ static QHBoxLayout* createCardHeader(QWidget *parent, ElaIconType::IconName icon
 
     ElaText *descText = new ElaText(desc, parent);
     descText->setTextPixelSize(11);
-    descText->setStyleSheet("color: #888888;");
+    descText->setTextStyle(ElaTextType::Caption);
 
     textLayout->addWidget(titleText);
     textLayout->addWidget(descText);
@@ -125,12 +128,12 @@ static QHBoxLayout* createCardHeader(QWidget *parent, ElaIconType::IconName icon
     return headerLayout;
 }
 
-// 辅助：创建水平分隔线
+// 辅助：创建水平分隔线（颜色由 applyTheme 统一刷成主题边框色）
 static QFrame* createSeparator(QWidget *parent)
 {
     QFrame *line = new QFrame(parent);
     line->setFrameShape(QFrame::HLine);
-    line->setStyleSheet("color: #e0e0e0;");
+    line->setStyleSheet(QString("color: %1;").arg(UiTheme::qss(UiTheme::border())));
     line->setFixedHeight(1);
     return line;
 }
@@ -304,23 +307,6 @@ void SettingPageWidget::setupUI()
     bgOpacitySlider_ = new QSlider(Qt::Horizontal, uiCard);
     bgOpacitySlider_->setRange(0, 100);
     bgOpacitySlider_->setValue(AppSettings::bgOpacity());
-    bgOpacitySlider_->setStyleSheet(
-        "QSlider::groove:horizontal {"
-        "  border-radius: 2px; height: 4px;"
-        "  background: rgba(200,180,170,0.3);"
-        "}"
-        "QSlider::handle:horizontal {"
-        "  background: rgba(200,140,120,0.85);"
-        "  border: none; width: 14px; height: 14px;"
-        "  margin: -5px 0; border-radius: 7px;"
-        "}"
-        "QSlider::handle:horizontal:hover {"
-        "  background: rgba(210,150,130,0.95);"
-        "}"
-        "QSlider::sub-page:horizontal {"
-        "  background: rgba(200,160,140,0.5); border-radius: 2px;"
-        "}"
-        );
 
     // 显示底部状态栏
     ElaText *statusLabel = new ElaText("显示底部状态栏", uiCard);
@@ -329,8 +315,7 @@ void SettingPageWidget::setupUI()
 
     QCheckBox *statusCheck = new QCheckBox(uiCard);
     statusCheck->setChecked(AppSettings::showStatusBar());
-    statusCheck->setStyleSheet("QCheckBox { font-size: 13px; color: #3a3a4a; }"
-                               "QCheckBox::indicator { width: 18px; height: 18px; }");
+    checkBoxes_.append(statusCheck);
     connect(statusCheck, &QCheckBox::stateChanged, this, [this](int state) {
         bool visible = (state == Qt::Checked);
         AppSettings::setShowStatusBar(visible);
@@ -344,8 +329,7 @@ void SettingPageWidget::setupUI()
 
     QCheckBox *bgEnableCheck = new QCheckBox(uiCard);
     bgEnableCheck->setChecked(AppSettings::chatBgEnabled());
-    bgEnableCheck->setStyleSheet("QCheckBox { font-size: 13px; color: #3a3a4a; }"
-                                 "QCheckBox::indicator { width: 18px; height: 18px; }");
+    checkBoxes_.append(bgEnableCheck);
     connect(bgEnableCheck, &QCheckBox::stateChanged, this, [this](int state) {
         bool enabled = (state == Qt::Checked);
         AppSettings::setChatBgEnabled(enabled);
@@ -354,19 +338,34 @@ void SettingPageWidget::setupUI()
     });
     bgOpacitySlider_->setEnabled(bgEnableCheck->isChecked());
 
+    // 主题模式
+    ElaText *themeLabel = new ElaText("主题模式", uiCard);
+    themeLabel->setTextPixelSize(13);
+    themeLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+
+    themeCombo_ = new ElaComboBox(uiCard);
+    themeCombo_->setMinimumHeight(34);
+    themeCombo_->addItems({"浅色", "深色", "跟随系统"});
+    themeCombo_->setCurrentIndex(qBound(0, AppSettings::themeMode(), 2));
+    connect(themeCombo_, &QComboBox::currentIndexChanged, this, [this](int idx) {
+        emit themeModeChanged(qBound(0, idx, 2));
+    });
+
     uiForm->addWidget(statusLabel, 1, 0);
     uiForm->addWidget(statusCheck, 1, 1);
 
     uiForm->addWidget(bgEnableLabel, 2, 0);
     uiForm->addWidget(bgEnableCheck, 2, 1);
 
-    QLabel *bgValueLabel = new QLabel(uiCard);
-    bgValueLabel->setStyleSheet("font-size: 13px; color: #8a8a9a;");
-    bgValueLabel->setFixedWidth(40);
-    bgValueLabel->setText(QString::number(bgOpacitySlider_->value()) + "%");
+    uiForm->addWidget(themeLabel, 3, 0);
+    uiForm->addWidget(themeCombo_, 3, 1);
 
-    connect(bgOpacitySlider_, &QSlider::valueChanged, this, [this, bgValueLabel](int val) {
-        bgValueLabel->setText(QString::number(val) + "%");
+    bgValueLabel_ = new QLabel(uiCard);
+    bgValueLabel_->setFixedWidth(40);
+    bgValueLabel_->setText(QString::number(bgOpacitySlider_->value()) + "%");
+
+    connect(bgOpacitySlider_, &QSlider::valueChanged, this, [this](int val) {
+        bgValueLabel_->setText(QString::number(val) + "%");
         emit bgOpacityChanged(val);
         AppSettings::setBgOpacity(val);
     });
@@ -375,7 +374,7 @@ void SettingPageWidget::setupUI()
     sliderRow->setSpacing(10);
     sliderRow->setContentsMargins(0, 0, 0, 0);
     sliderRow->addWidget(bgOpacitySlider_, 1);
-    sliderRow->addWidget(bgValueLabel);
+    sliderRow->addWidget(bgValueLabel_);
 
     uiForm->addWidget(bgLabel, 0, 0);
     uiForm->addLayout(sliderRow, 0, 1);
@@ -384,6 +383,79 @@ void SettingPageWidget::setupUI()
     rootLayout->addWidget(uiCard);
 
     rootLayout->addStretch();
+
+    // 主题切换时重刷自定义 QSS
+    connect(eTheme, &ElaTheme::themeModeChanged, this, [this](ElaThemeType::ThemeMode) {
+        applyTheme();
+    });
+    applyTheme();
+}
+
+void SettingPageWidget::syncThemeCombo(int mode)
+{
+    if (!themeCombo_) return;
+    QSignalBlocker blocker(themeCombo_);
+    themeCombo_->setCurrentIndex(qBound(0, mode, 2));
+}
+
+void SettingPageWidget::applyTheme()
+{
+    // 卡片
+    const QString cardQss = QString(
+        "QFrame#SettingCard {"
+        "  background-color: %1;"
+        "  border: 1px solid %2;"
+        "  border-radius: 12px;"
+        "}")
+        .arg(UiTheme::qss(UiTheme::surface()),
+             UiTheme::qss(UiTheme::border()));
+    const QList<QFrame *> cards = findChildren<QFrame *>(QStringLiteral("SettingCard"));
+    for (QFrame *card : cards) {
+        card->setStyleSheet(cardQss);
+    }
+
+    // 分隔线
+    const QString lineQss = QString("color: %1;").arg(UiTheme::qss(UiTheme::border()));
+    const QList<QFrame *> frames = findChildren<QFrame *>();
+    for (QFrame *f : frames) {
+        if (f->frameShape() == QFrame::HLine) {
+            f->setStyleSheet(lineQss);
+        }
+    }
+
+    // 滑块
+    if (bgOpacitySlider_) {
+        bgOpacitySlider_->setStyleSheet(QString(
+            "QSlider::groove:horizontal {"
+            "  border-radius: 2px; height: 4px; background: %1;"
+            "}"
+            "QSlider::handle:horizontal {"
+            "  background: %2; border: none; width: 14px; height: 14px;"
+            "  margin: -5px 0; border-radius: 7px;"
+            "}"
+            "QSlider::handle:horizontal:hover { background: %3; }"
+            "QSlider::sub-page:horizontal { background: %4; border-radius: 2px; }"
+            )
+            .arg(UiTheme::qss(UiTheme::border()),
+                 UiTheme::qss(UiTheme::accent()),
+                 UiTheme::qss(UiTheme::accentHover()),
+                 UiTheme::qss(UiTheme::accent(), 140)));
+    }
+
+    // checkbox
+    const QString checkQss = QString(
+        "QCheckBox { font-size: 13px; color: %1; }"
+        "QCheckBox::indicator { width: 18px; height: 18px; }")
+        .arg(UiTheme::qss(UiTheme::textPrimary()));
+    for (QCheckBox *cb : checkBoxes_) {
+        cb->setStyleSheet(checkQss);
+    }
+
+    // 数值标签
+    if (bgValueLabel_) {
+        bgValueLabel_->setStyleSheet(
+            QString("font-size: 13px; color: %1;").arg(UiTheme::qss(UiTheme::textSecondary())));
+    }
 }
 
 void SettingPageWidget::loadSettings()
@@ -400,6 +472,9 @@ void SettingPageWidget::loadSettings()
         }
     }
     modelComboBox_->setCurrentText(AppSettings::model());
+
+    syncThemeCombo(AppSettings::themeMode());
+    applyTheme();
 }
 
 void SettingPageWidget::saveSettings()

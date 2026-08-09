@@ -83,6 +83,7 @@ protected:
 private:
     void updateStatusBarText();
     void setupUI();
+    void applyTheme();
     void scrollToBottom();
     void flushAiContent();
 

@@ -4,10 +4,18 @@
 #include <QRegularExpression>
 #include <cmath>
 
-QString MarkdownRenderer::toHtml(const QString &md, QStringList *rawCodeBlocksOut)
+QString MarkdownRenderer::toHtml(const QString &md, QStringList *rawCodeBlocksOut, bool dark)
 {
     if (md.isEmpty()) return md;
     if (rawCodeBlocksOut) rawCodeBlocksOut->clear();
+
+    const QString bodyColor = UiTheme::textPrimaryFor(dark).name();
+    const QString linkColor = UiTheme::linkColorFor(dark).name();
+    const QString codeBg = UiTheme::codeBgFor(dark).name();
+    const QString codeHeaderBg = UiTheme::codeHeaderBgFor(dark).name();
+    const QString codeText = UiTheme::codeTextFor(dark).name();
+    const QString inlineBg = UiTheme::inlineCodeBgFor(dark).name();
+    const QString inlineText = UiTheme::inlineCodeTextFor(dark).name();
 
     QString html = md;
 
@@ -52,25 +60,26 @@ QString MarkdownRenderer::toHtml(const QString &md, QStringList *rawCodeBlocksOu
 
         int idx = codeBlocks.size();
         QString headerLabel = lang.isEmpty() ? QStringLiteral("text") : lang;
-        // MODIFIED: 代码块改为暖色调暗底，与整体主题协调
+        // 代码块：两种模式都保持暗底，深浅由 UiTheme::codeBg()/codeHeaderBg() 决定
         QString block = QString(
                             "<table width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" "
-                            "style=\"background:#232a38; border:1px solid rgba(255,255,255,0.08); "
+                            "style=\"background:%1; border:1px solid rgba(255,255,255,0.08); "
                             "border-radius:10px; margin:8px 0; overflow:hidden;\">"
                             "<tr>"
-                            "<td style=\"padding:6px 14px; background:#171d29;\">"
-                            "<span style=\"color:#5a8ae6; font-size:11px; letter-spacing:0.5px;\">%1</span>"
+                            "<td style=\"padding:6px 14px; background:%2;\">"
+                            "<span style=\"color:%3; font-size:11px; letter-spacing:0.5px;\">%4</span>"
                             "</td>"
-                            "<td align=\"right\" style=\"padding:6px 14px; background:#171d29;\">"
-                            "<a href=\"copycode:%2\" style=\"color:#5a8ae6; font-size:11px; text-decoration:none;\">复制</a>"
+                            "<td align=\"right\" style=\"padding:6px 14px; background:%2;\">"
+                            "<a href=\"copycode:%5\" style=\"color:%3; font-size:11px; text-decoration:none;\">复制</a>"
                             "</td>"
                             "</tr>"
                             "<tr><td colspan=\"2\" style=\"padding:12px 16px;\">"
-                            "<pre style=\"margin:0; color:#e2e8f0; font-family:'JetBrains Mono','Cascadia Code',monospace; "
-                            "font-size:13px; line-height:1.6; white-space:pre-wrap;\"><code>%3</code></pre>"
+                            "<pre style=\"margin:0; color:%6; font-family:'JetBrains Mono','Cascadia Code',monospace; "
+                            "font-size:13px; line-height:1.6; white-space:pre-wrap;\"><code>%7</code></pre>"
                             "</td></tr>"
                             "</table>"
-                            ).arg(headerLabel, QString::number(idx), bodyHtml);
+                            ).arg(codeBg, codeHeaderBg, linkColor, headerLabel,
+                                  QString::number(idx), codeText, bodyHtml);
         codeBlocks.append(block);
         if (rawCodeBlocksOut) {
             rawCodeBlocksOut->append(rawCode);
@@ -82,19 +91,21 @@ QString MarkdownRenderer::toHtml(const QString &md, QStringList *rawCodeBlocksOu
     }
 
     html.replace(QRegularExpression("`([^`]+)`"),
-                 "<code style=\"background:#eff1f3; color:#24292e; padding:2px 6px; border-radius:4px; font-size:12.5px;\">\\1</code>");
+                 QString("<code style=\"background:%1; color:%2; padding:2px 6px; border-radius:4px; font-size:12.5px;\">\\1</code>")
+                     .arg(inlineBg, inlineText));
     html.replace(QRegularExpression("\\*\\*(.+?)\\*\\*"), "<b>\\1</b>");
     html.replace(QRegularExpression("__(.+?)__"), "<b>\\1</b>");
     html.replace(QRegularExpression("\\*(.+?)\\*"), "<i>\\1</i>");
     html.replace(QRegularExpression("_(.+?)_"), "<i>\\1</i>");
-    html.replace(QRegularExpression("\\[([^\\]]+)\\]\\(([^)]+)\\)"), "<a href=\"\\2\">\\1</a>");
+    html.replace(QRegularExpression("\\[([^\\]]+)\\]\\(([^)]+)\\)"),
+                 QString("<a href=\"\\2\" style=\"color:%1;\">\\1</a>").arg(linkColor));
     html.replace("\n", "<br>");
 
     for (int i = 0; i < codeBlocks.size(); ++i) {
         html.replace(QString("\x01" "CB%1\x01").arg(i), codeBlocks[i]);
     }
 
-    return "<div style='line-height:1.6;'>" + html + "</div>";
+    return "<div style='line-height:1.6; color:" + bodyColor + ";'>" + html + "</div>";
 }
 
 void MarkdownRenderer::adjustTextBrowserHeight(QTextBrowser *browser)

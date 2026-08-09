@@ -43,6 +43,9 @@ void setModel(const QString &model)
 QStringList recentModels() { return store().value("recentModels").toStringList(); }
 void setRecentModels(const QStringList &models) { store().setValue("recentModels", models); }
 
+int themeMode() { return store().value("themeMode", 2).toInt(); }
+void setThemeMode(int mode) { store().setValue("themeMode", mode); }
+
 int bgOpacity() { return store().value("bgOpacity", 25).toInt(); }
 void setBgOpacity(int opacity) { store().setValue("bgOpacity", opacity); }
 

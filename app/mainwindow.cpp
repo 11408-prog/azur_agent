@@ -3,6 +3,7 @@
 #include "app/settingpagewidget.h"
 #include "core/promptloader.h"
 #include "data/appsettings.h"
+#include "ui/theme.h"
 
 #include <ElaWindow.h>
 #include <ElaApplication.h>
@@ -41,6 +42,7 @@
 #include <QClipboard>
 #include <QShortcut>
 #include <QGuiApplication>
+#include <QStyleHints>
 #include <QDesktopServices>
 #include <QUrl>
 #include <QRegularExpression>
@@ -88,17 +90,11 @@ MainWindow::MainWindow(QWidget *parent)
     setWindowTitle("Azur Agent");
     resize(1100, 750);
 
-    // 修复 tooltip 样式：防止 ElaWidgetTools 主题导致黑块
-    setStyleSheet(
-        "QToolTip {"
-        "   background-color: #2d2d2d;"
-        "   color: #e0e0e0;"
-        "   border: 1px solid #555;"
-        "   border-radius: 6px;"
-        "   padding: 6px 10px;"
-        "   font-size: 13px;"
-        "}"
-    );
+    // 修复 tooltip 样式：防止 ElaWidgetTools 主题导致黑块（浅/深两套由 UiTheme 驱动）
+    applyToolTipStyle();
+
+    // AppBar 内置"日/月"主题切换按钮
+    setWindowButtonFlags(getWindowButtonFlags() | ElaAppBarType::ThemeChangeButtonHint);
 
     // ==================== 初始化数据层 ====================
 
@@ -192,6 +188,16 @@ MainWindow::MainWindow(QWidget *parent)
     connect(settingsPageWidget_, &SettingPageWidget::connectionTestRequested, this, [this](const QString &apiKey, const QString &baseUrl) {
         client_->testConnection(apiKey, baseUrl);
     });
+
+    // ---- 主题：设置页下拉 ↔ AppBar 日/月按钮 双向同步 ----
+    connect(settingsPageWidget_, &SettingPageWidget::themeModeChanged, this, [this](int mode) {
+        AppSettings::setThemeMode(mode);
+        applyingThemeFromSetting_ = true;  // 这次 themeModeChanged 是下拉触发的，别回写
+        applyTheme();
+        applyingThemeFromSetting_ = false;
+        settingsPageWidget_->syncThemeCombo(AppSettings::themeMode());
+    });
+    connect(eTheme, &ElaTheme::themeModeChanged, this, &MainWindow::onThemeModeChanged);
 
     // ==================== 创建 AgentEngine ====================
 
@@ -358,11 +364,40 @@ void MainWindow::setupAboutPage()
     QWidget *aboutContent = new QWidget();
     QVBoxLayout *aboutLayout = new QVBoxLayout(aboutContent);
     aboutLayout->setContentsMargins(30, 30, 30, 30);
-    aboutLayout->setSpacing(20);
+    aboutLayout->setSpacing(14);
     aboutLayout->setAlignment(Qt::AlignCenter);
 
+    // 应用图标（圆形头像，复用导航用户卡同一张图）
+    QLabel *appIcon = new QLabel(aboutContent);
+    appIcon->setFixedSize(72, 72);
+    appIcon->setAlignment(Qt::AlignCenter);
+    const QPixmap iconPix(projectRoot() + "/app/avatar/enterprise3.png");
+    if (!iconPix.isNull()) {
+        static constexpr int kRenderSize = 144;
+        QPixmap rounded(kRenderSize, kRenderSize);
+        rounded.fill(Qt::transparent);
+        QPainter painter(&rounded);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setRenderHint(QPainter::SmoothPixmapTransform);
+        QPainterPath path;
+        path.addEllipse(0, 0, kRenderSize, kRenderSize);
+        painter.setClipPath(path);
+        painter.drawPixmap(0, 0, kRenderSize, kRenderSize,
+                           iconPix.scaled(kRenderSize, kRenderSize,
+                                          Qt::KeepAspectRatio, Qt::SmoothTransformation));
+        painter.end();
+        rounded.setDevicePixelRatio(2);
+        appIcon->setPixmap(rounded);
+    } else {
+        appIcon->setText("E");
+        appIcon->setStyleSheet(
+            "color: white; background-color: #0f5ff0; border-radius: 36px;"
+            "font-size: 28px; font-weight: bold;");
+    }
+    aboutLayout->addWidget(appIcon, 0, Qt::AlignCenter);
+
     ElaText *appName = new ElaText("Azur Agent", aboutContent);
-    appName->setTextPixelSize(28);
+    appName->setTextPixelSize(26);
     QFont boldFont = appName->font();
     boldFont.setBold(true);
     appName->setFont(boldFont);
@@ -376,7 +411,7 @@ void MainWindow::setupAboutPage()
 
     QFrame *line = new QFrame(aboutContent);
     line->setFrameShape(QFrame::HLine);
-    line->setFixedWidth(300);
+    line->setFixedWidth(280);
     aboutLayout->addWidget(line, 0, Qt::AlignCenter);
 
     ElaText *desc = new ElaText(
@@ -388,16 +423,30 @@ void MainWindow::setupAboutPage()
     desc->setWordWrap(true);
     aboutLayout->addWidget(desc);
 
-    ElaText *tech = new ElaText(
-        "技术栈\n"
-        "Qt " QT_VERSION_STR "\n"
-        "ElaWidgetTools\n"
-        "C++17",
-        aboutContent);
-    tech->setTextStyle(ElaTextType::Body);
-    tech->setAlignment(Qt::AlignCenter);
-    tech->setWordWrap(true);
-    aboutLayout->addWidget(tech);
+    // 技术栈小卡片：ElaScrollPageArea 背景随主题自动切换
+    ElaScrollPageArea *techCard = new ElaScrollPageArea(aboutContent);
+    techCard->setBorderRadius(12);
+    techCard->setMinimumWidth(320);
+    QVBoxLayout *techLayout = new QVBoxLayout(techCard);
+    techLayout->setContentsMargins(20, 14, 20, 14);
+    techLayout->setSpacing(4);
+
+    ElaText *techTitle = new ElaText("技术栈", techCard);
+    techTitle->setTextPixelSize(13);
+    QFont techBold = techTitle->font();
+    techBold.setBold(true);
+    techTitle->setFont(techBold);
+    techTitle->setAlignment(Qt::AlignCenter);
+
+    ElaText *techBody = new ElaText(
+        QStringLiteral("Qt %1\nElaWidgetTools\nC++17").arg(QT_VERSION_STR), techCard);
+    techBody->setTextStyle(ElaTextType::Body);
+    techBody->setAlignment(Qt::AlignCenter);
+    techBody->setWordWrap(true);
+
+    techLayout->addWidget(techTitle);
+    techLayout->addWidget(techBody);
+    aboutLayout->addWidget(techCard, 0, Qt::AlignCenter);
 
     ElaText *copyright = new ElaText("目前在开发阶段，可能会有一些问题", aboutContent);
     copyright->setTextStyle(ElaTextType::Caption);
@@ -598,6 +647,56 @@ void MainWindow::loadSettings()
     qDebug()<<"[MAINWIN] loadSettings";
     settingsPageWidget_->loadSettings();
     chatPageWidget_->restoreSidebarState(true);
+    applyTheme();
+}
+
+// ==================== 主题 ====================
+
+void MainWindow::applyTheme()
+{
+    const int mode = AppSettings::themeMode();
+    ElaThemeType::ThemeMode target;
+    if (mode == 2) {
+        // 跟随系统：用 Qt 上报的配色方案决定
+        target = (QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark)
+                     ? ElaThemeType::Dark
+                     : ElaThemeType::Light;
+    } else {
+        target = (mode == 1) ? ElaThemeType::Dark : ElaThemeType::Light;
+    }
+    eTheme->setThemeMode(target);
+}
+
+void MainWindow::applyToolTipStyle()
+{
+    setStyleSheet(QString(
+        "QToolTip {"
+        "   background-color: %1;"
+        "   color: %2;"
+        "   border: 1px solid %3;"
+        "   border-radius: 6px;"
+        "   padding: 6px 10px;"
+        "   font-size: 13px;"
+        "}"
+    ).arg(UiTheme::qss(UiTheme::panelBg()),
+          UiTheme::qss(UiTheme::textPrimary()),
+          UiTheme::qss(UiTheme::border())));
+}
+
+void MainWindow::onThemeModeChanged(ElaThemeType::ThemeMode mode)
+{
+    const int resolved = (mode == ElaThemeType::Dark) ? 1 : 0;
+
+    // 来自 AppBar 日/月按钮（或系统变化）的切换视为显式选择，记住它；
+    // 来自设置页下拉的切换由 applyingThemeFromSetting_ 挡住，保持"跟随系统"不丢。
+    if (!applyingThemeFromSetting_) {
+        AppSettings::setThemeMode(resolved);
+    }
+
+    if (settingsPageWidget_) {
+        settingsPageWidget_->syncThemeCombo(AppSettings::themeMode());
+    }
+    applyToolTipStyle();
 }
 
 // ==================== Prompt 构建 ====================

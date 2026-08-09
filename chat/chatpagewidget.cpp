@@ -3,6 +3,7 @@
 #include "ui/messagebubblewidget.h"
 #include "ui/uiconstants.h"
 #include "ui/conversationview.h"
+#include "ui/theme.h"
 #include "data/appsettings.h"
 
 #include <ElaScrollArea.h>
@@ -13,6 +14,7 @@
 #include <ElaText.h>
 #include <ElaMessageBar.h>
 #include <ElaIcon.h>
+#include <ElaTheme.h>
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -93,26 +95,7 @@ void ChatPageWidget::setupUI()
     sidebarWidget_->setMinimumWidth(0);
     sidebarWidget_->setMaximumWidth(kSidebarExpandedWidth);
     sidebarWidget_->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
-    // MODIFIED: 侧边栏改为半透明暖白毛玻璃
-    sidebarWidget_->setStyleSheet(
-        "QWidget {"
-        "   background-color: rgba(247, 249, 252, 0.88);"
-        "   border-right: 1px solid rgba(150, 170, 200, 0.25);"
-        "}"
-        "QLabel { background: transparent; color: #3a3a4a; }"
-        "QListWidget { background: transparent; border: none; color: #4a4a5a; }"
-        "QListWidget::item { padding: 8px 12px; border-radius: 8px; }"
-        "QListWidget::item:selected {"
-        "   background-color: rgba(15, 95, 240, 0.18);"
-        "   color: #2a2a3a;"
-        "}"
-        "QListWidget::item:hover { background-color: rgba(150, 170, 200, 0.15); }"
-        "QScrollBar:vertical { background: transparent; width: 6px; margin: 0; }"
-        "QScrollBar::handle:vertical { background: rgba(0,0,0,0.18); border-radius: 3px; min-height: 24px; }"
-        "QScrollBar::handle:vertical:hover { background: rgba(0,0,0,0.32); }"
-        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
-        "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }"
-        );
+    sidebarWidget_->setAttribute(Qt::WA_StyledBackground, true);
     sidebarOpacityEffect_ = new QGraphicsOpacityEffect(sidebarWidget_);
     sidebarOpacityEffect_->setOpacity(1.0);
     sidebarWidget_->setGraphicsEffect(sidebarOpacityEffect_);
@@ -131,18 +114,15 @@ void ChatPageWidget::setupUI()
     QHBoxLayout *topBar = new QHBoxLayout();
     topBar->setContentsMargins(0, 0, 0, 0);
 
-    ElaText *historyLabel = new ElaText("历史记录", sidebarWidget_);
-    historyLabel->setTextStyle(ElaTextType::Body);
-    historyLabel->setTextPixelSize(15);
-    // MODIFIED: 标题颜色改为暖深棕
-    historyLabel->setStyleSheet("color: #2a2a3a;");
-
-    QFont sideTitleFont = historyLabel->font();
+    historyLabel_ = new ElaText("历史记录", sidebarWidget_);
+    historyLabel_->setTextStyle(ElaTextType::Body);
+    historyLabel_->setTextPixelSize(15);
+    QFont sideTitleFont = historyLabel_->font();
     sideTitleFont.setBold(true);
-    historyLabel->setFont(sideTitleFont);
-    historyLabel->setAlignment(Qt::AlignVCenter | Qt::AlignLeft);
+    historyLabel_->setFont(sideTitleFont);
+    historyLabel_->setAlignment(Qt::AlignVCenter | Qt::AlignLeft);
 
-    topBar->addWidget(historyLabel);
+    topBar->addWidget(historyLabel_);
     topBar->addStretch();
     sidebarLayout->addLayout(topBar);
 
@@ -152,28 +132,15 @@ void ChatPageWidget::setupUI()
     connect(newChatBtn, &ElaPushButton::clicked, this, &ChatPageWidget::newConversationClicked);
     sidebarLayout->addWidget(newChatBtn);
 
-    ElaText *recentLabel = new ElaText("最近对话", sidebarWidget_);
-    recentLabel->setTextStyle(ElaTextType::Caption);
-    // MODIFIED: 副标题颜色改为暖灰
-    recentLabel->setStyleSheet("color: #8a8a9a; background: transparent;");
-    sidebarLayout->addWidget(recentLabel);
+    recentLabel_ = new ElaText("最近对话", sidebarWidget_);
+    recentLabel_->setTextStyle(ElaTextType::Caption);
+    sidebarLayout->addWidget(recentLabel_);
 
     historyList_ = new QListWidget(sidebarWidget_);
     historyList_->setFrameShape(QFrame::NoFrame);
     historyList_->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
     historyList_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     historyList_->setTextElideMode(Qt::ElideRight);
-    historyList_->setStyleSheet(
-        "QListWidget { background: transparent; border: none; }"
-        "QListWidget::item { padding: 8px 12px; border-radius: 6px; }"
-        "QListWidget::item:selected { background-color: rgba(15, 95, 240, 0.18); }"
-        "QListWidget::item:hover { background-color: rgba(0,0,0,0.05); }"
-        "QScrollBar:vertical { background: transparent; width: 6px; margin: 0; }"
-        "QScrollBar::handle:vertical { background: rgba(0,0,0,0.18); border-radius: 3px; min-height: 24px; }"
-        "QScrollBar::handle:vertical:hover { background: rgba(0,0,0,0.32); }"
-        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
-        "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }"
-        );
     historyList_->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(historyList_, &QListWidget::itemClicked, this, [this](QListWidgetItem *item) {
         if (!item || !(item->flags() & Qt::ItemIsSelectable)) return;
@@ -206,7 +173,6 @@ void ChatPageWidget::setupUI()
 
     historyEmptyLabel_ = new QLabel("暂无对话\n点击「+ 新对话」开始", sidebarWidget_);
     historyEmptyLabel_->setAlignment(Qt::AlignCenter);
-    historyEmptyLabel_->setStyleSheet("color: #888; font-size: 14px;");
     historyEmptyLabel_->setVisible(false);
     sidebarLayout->addWidget(historyEmptyLabel_);
 
@@ -225,6 +191,57 @@ void ChatPageWidget::setupUI()
 
     conversationView_->setStatusBarVisible(AppSettings::showStatusBar());
     conversationView_->setStatusBarModelName(AppSettings::model());
+
+    connect(eTheme, &ElaTheme::themeModeChanged, this, [this](ElaThemeType::ThemeMode) {
+        applyTheme();
+    });
+    applyTheme();
+}
+
+void ChatPageWidget::applyTheme()
+{
+    const QColor handleCol = UiTheme::over(UiTheme::textPrimary(), UiTheme::panelBg(),
+                                           UiTheme::dark() ? 0.35 : 0.22);
+    const QColor handleHover = UiTheme::over(UiTheme::textPrimary(), UiTheme::panelBg(),
+                                             UiTheme::dark() ? 0.55 : 0.40);
+
+    // 侧边栏面板：实色 panelBg + 1px 边框（不再毛玻璃）
+    sidebarWidget_->setStyleSheet(QString(
+        "QWidget {"
+        "   background-color: %1;"
+        "   border-right: 1px solid %2;"
+        "}"
+        "QLabel { background: transparent; color: %3; }"
+        "QScrollBar:vertical { background: transparent; width: 6px; margin: 0; }"
+        "QScrollBar::handle:vertical { background: %4; border-radius: 3px; min-height: 24px; }"
+        "QScrollBar::handle:vertical:hover { background: %5; }"
+        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
+        "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }"
+        )
+        .arg(UiTheme::qss(UiTheme::panelBg()),
+             UiTheme::qss(UiTheme::border()),
+             UiTheme::qss(UiTheme::textSecondary()),
+             UiTheme::qss(handleCol),
+             UiTheme::qss(handleHover)));
+
+    // 历史列表：选中态用 accent 低透明度，hover 用中性色
+    if (historyList_) {
+        historyList_->setStyleSheet(QString(
+            "QListWidget { background: transparent; border: none; color: %1; font-size: 13px; }"
+            "QListWidget::item { padding: 8px 12px; border-radius: 8px; }"
+            "QListWidget::item:selected { background-color: %2; color: %1; }"
+            "QListWidget::item:hover { background-color: %3; }"
+            )
+            .arg(UiTheme::qss(UiTheme::textPrimary()),
+                 UiTheme::qss(UiTheme::accentOverlay()),
+                 UiTheme::qss(UiTheme::hoverOverlay())));
+    }
+
+    // 空态
+    if (historyEmptyLabel_) {
+        historyEmptyLabel_->setStyleSheet(
+            QString("color: %1; font-size: 14px;").arg(UiTheme::qss(UiTheme::textSecondary())));
+    }
 }
 
 QString ChatPageWidget::timeBasedGreeting() const

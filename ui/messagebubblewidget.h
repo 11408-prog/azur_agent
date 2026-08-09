@@ -50,9 +50,11 @@ protected:
 
 private:
     void initUI();
+    void applyTheme();
     QLabel *createAvatar();
     void createStepIndicator();
     void updateBubbleMaxWidth();
+    void renderMarkdown(const QString &markdown);
 
     bool isUser_;
     QLabel *avatar_;
@@ -84,6 +86,9 @@ private:
     static constexpr int kLazyRenderInitialLines = 100;
     QString fullMarkdown_;
     void renderFullContent();
+
+    // 最近一次 setAiContent 的 Markdown 原文：主题切换时据此重渲染（深色下颜色才会刷新）
+    QString currentMarkdown_;
 };
 
 #endif // MESSAGEBUBBLEWIDGET_H

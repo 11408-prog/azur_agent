@@ -1,10 +1,12 @@
 #include "ui/conversationview.h"
 #include "ui/messagebubblewidget.h"
+#include "ui/theme.h"
 
 #include <ElaScrollArea.h>
 #include <ElaPlainTextEdit.h>
 #include <ElaIconButton.h>
 #include <ElaIcon.h>
+#include <ElaTheme.h>
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -46,16 +48,6 @@ void ConversationView::setupUI()
 
     messageScrollArea_->setVerticalScrollBar(new QScrollBar(Qt::Vertical, messageScrollArea_));
     messageScrollArea_->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-    // MODIFIED: 滚动条改为半透明白色，适配暖色壁纸
-    messageScrollArea_->setStyleSheet(
-        "QScrollArea { background: transparent; }"
-        "QScrollBar:vertical { background: transparent; width: 5px; margin: 0; }"
-        "QScrollBar::handle:vertical { background: rgba(120, 120, 130, 0.3); border-radius: 3px; min-height: 24px; }"
-        "QScrollBar::handle:vertical:hover { background: rgba(120, 120, 130, 0.5); }"
-        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
-        "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }"
-        );
-    messageScrollArea_->viewport()->setStyleSheet("background: transparent;");
     messageScrollArea_->viewport()->installEventFilter(this);
     layout->addWidget(messageScrollArea_, 1);
 
@@ -66,37 +58,10 @@ void ConversationView::setupUI()
     inputEdit_->setPlaceholderText("输入消息，Enter 发送，Shift+Enter 换行...");
     inputEdit_->setFixedHeight(72);
     inputEdit_->installEventFilter(this);
-    // MODIFIED: 输入框改为半透明毛玻璃感
-    inputEdit_->setStyleSheet(
-        "ElaPlainTextEdit {"
-        "   background: rgba(255, 255, 255, 0.72);"
-        "   border: 1px solid rgba(255, 255, 255, 0.4);"
-        "   border-radius: 14px;"
-        "   color: #3a3a4a;"
-        "   padding: 10px 14px;"
-        "   font-size: 14px;"
-        "}"
-        "ElaPlainTextEdit:focus {"
-        "   border-color: rgba(15, 95, 240, 0.6);"
-        "   background: rgba(255, 255, 255, 0.85);"
-        "}"
-        );
     inputLayout->addWidget(inputEdit_, 1);
 
     sendButton_ = new ElaIconButton(ElaIconType::PaperPlane, 18, 40, 40, this);
     sendButton_->setToolTip("发送 (Enter)");
-    // MODIFIED: 发送按钮改为暖珊瑚色
-    sendButton_->setStyleSheet(
-        "ElaIconButton {"
-        "   background: rgba(15, 95, 240, 0.85);"
-        "   border: none;"
-        "   border-radius: 12px;"
-        "   color: white;"
-        "}"
-        "ElaIconButton:hover {"
-        "   background: rgba(13, 82, 210, 0.95);"
-        "}"
-        );
     connect(sendButton_, &ElaIconButton::clicked, this, [this]() {
         emit sendRequested(inputEdit_->toPlainText().trimmed());
     });
@@ -105,15 +70,6 @@ void ConversationView::setupUI()
     stopButton_ = new ElaIconButton(ElaIconType::Ban, 18, 40, 40, this);
     stopButton_->setToolTip("停止生成");
     stopButton_->setVisible(false);
-    // MODIFIED: 停止按钮样式
-    stopButton_->setStyleSheet(
-        "ElaIconButton {"
-        "   background: rgba(80, 80, 90, 0.7);"
-        "   border: none;"
-        "   border-radius: 12px;"
-        "   color: #f0f0f0;"
-        "}"
-        );
     connect(stopButton_, &ElaIconButton::clicked, this, [this]() {
         emit cancelRequested();
     });
@@ -124,14 +80,6 @@ void ConversationView::setupUI()
     // ---- 底部状态栏 ----
     statusBarLabel_ = new QLabel(this);
     statusBarLabel_->setFixedHeight(26);
-    statusBarLabel_->setStyleSheet(
-        "QLabel {"
-        "  font-size: 11px;"
-        "  color: #a0a0a0;"
-        "  padding: 0 4px;"
-        "  background: transparent;"
-        "}"
-        );
     statusBarLabel_->setAlignment(Qt::AlignVCenter);
     layout->addWidget(statusBarLabel_);
 
@@ -142,6 +90,91 @@ void ConversationView::setupUI()
     });
     statusBarTimer_->start(60000); // 60秒
     updateStatusBarText();
+
+    connect(eTheme, &ElaTheme::themeModeChanged, this, [this](ElaThemeType::ThemeMode) {
+        applyTheme();
+    });
+    applyTheme();
+}
+
+void ConversationView::applyTheme()
+{
+    // 滚动区
+    const QColor handleCol = UiTheme::over(UiTheme::textPrimary(), UiTheme::surface(),
+                                           UiTheme::dark() ? 0.35 : 0.22);
+    const QColor handleHover = UiTheme::over(UiTheme::textPrimary(), UiTheme::surface(),
+                                             UiTheme::dark() ? 0.55 : 0.40);
+    messageScrollArea_->setStyleSheet(QString(
+        "QScrollArea { background: transparent; }"
+        "QScrollBar:vertical { background: transparent; width: 5px; margin: 0; }"
+        "QScrollBar::handle:vertical { background: %1; border-radius: 3px; min-height: 24px; }"
+        "QScrollBar::handle:vertical:hover { background: %2; }"
+        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
+        "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }"
+        )
+        .arg(UiTheme::qss(handleCol), UiTheme::qss(handleHover)));
+    messageScrollArea_->viewport()->setStyleSheet("background: transparent;");
+
+    // 输入框：实色 surface + 边框，focus 时 accent 边框，圆角 12
+    inputEdit_->setStyleSheet(QString(
+        "ElaPlainTextEdit {"
+        "   background: %1;"
+        "   border: 1px solid %2;"
+        "   border-radius: 12px;"
+        "   color: %3;"
+        "   padding: 10px 14px;"
+        "   font-size: 14px;"
+        "}"
+        "ElaPlainTextEdit:focus {"
+        "   border-color: %4;"
+        "   background: %5;"
+        "}"
+        )
+        .arg(UiTheme::qss(UiTheme::surface()),
+             UiTheme::qss(UiTheme::border()),
+             UiTheme::qss(UiTheme::textPrimary()),
+             UiTheme::qss(UiTheme::accent()),
+             UiTheme::qss(UiTheme::surface())));
+
+    // 发送按钮：accent 实心 + hover accentHover
+    sendButton_->setStyleSheet(QString(
+        "ElaIconButton {"
+        "   background: %1;"
+        "   border: none;"
+        "   border-radius: 12px;"
+        "   color: %2;"
+        "}"
+        "ElaIconButton:hover { background: %3; }"
+        )
+        .arg(UiTheme::qss(UiTheme::accent()),
+             UiTheme::qss(UiTheme::textOnAccent()),
+             UiTheme::qss(UiTheme::accentHover())));
+
+    // 停止按钮：中性灰
+    const QColor stopCol = UiTheme::over(UiTheme::textSecondary(), UiTheme::surface(), 0.85);
+    stopButton_->setStyleSheet(QString(
+        "ElaIconButton {"
+        "   background: %1;"
+        "   border: none;"
+        "   border-radius: 12px;"
+        "   color: %2;"
+        "}"
+        "ElaIconButton:hover { background: %3; }"
+        )
+        .arg(UiTheme::qss(stopCol),
+             UiTheme::qss(UiTheme::textPrimary()),
+             UiTheme::qss(UiTheme::hoverOverlay())));
+
+    // 状态栏文字
+    statusBarLabel_->setStyleSheet(QString(
+        "QLabel {"
+        "  font-size: 11px;"
+        "  color: %1;"
+        "  padding: 0 4px;"
+        "  background: transparent;"
+        "}"
+        )
+        .arg(UiTheme::qss(UiTheme::textSecondary())));
 }
 
 MessageBubbleWidget *ConversationView::appendMessage(const QString &text, bool isUser,

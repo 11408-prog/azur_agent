@@ -85,6 +85,7 @@ signals:
 
 private:
     void setupUI();
+    void applyTheme();
     QString timeBasedGreeting() const;
 
     // ---- 侧边栏 ----
@@ -95,6 +96,8 @@ private:
     QGraphicsOpacityEffect *sidebarOpacityEffect_;
     QListWidget *historyList_;
     ElaPushButton *clearHistoryBtn_;
+    ElaText *historyLabel_ = nullptr;
+    ElaText *recentLabel_ = nullptr;
     QLabel *historyEmptyLabel_;
     static constexpr int kSidebarExpandedWidth = 260;
 

@@ -60,7 +60,9 @@ protected:
     void closeEvent(QCloseEvent *event) override;
     bool nativeEvent(const QByteArray &eventType, void *message, qintptr *result) override;
 
-private slots:   
+private slots:
+    void onThemeModeChanged(ElaThemeType::ThemeMode mode);
+
     void onNewConversation();
     void loadConversation(const QString &id);
 
@@ -85,6 +87,11 @@ private:
     void setupAboutPage();
     void saveSettings();
     void loadSettings();
+
+    // ---- 主题 ----
+    void applyTheme();            // 从 AppSettings::themeMode() 解析并应用到 eTheme
+    void applyToolTipStyle();     // Tooltip 的浅/深两套 QSS
+    bool applyingThemeFromSetting_ = false; // 防止设置页下拉触发的 themeModeChanged 回写
 
     // ---- Prompt 构建 ----
     QString buildSystemPrompt() const;
