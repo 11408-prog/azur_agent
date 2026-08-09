@@ -291,6 +291,8 @@ MainWindow::MainWindow(QWidget *parent)
     }
 #endif
 
+    // ==================== 创建托盘系统 ====================
+    createTrayIcon();
 }
 
 // ==================== AppBar 按钮状态 ====================
@@ -561,9 +563,17 @@ void MainWindow::onNewConversation()
 
 void MainWindow::closeEvent(QCloseEvent *event)
 {
-    qDebug()<<"[MAINWIN] closeEvent 窗口关闭";
-    saveSettings();
-    event->accept();
+    // 如果托盘可用且可见，点击 X 时隐藏到托盘，而不是退出
+    if (trayIcon_ && trayIcon_->isVisible()) {
+        this->hide();           // 隐藏主窗口
+        event->ignore();        // 忽略关闭事件（程序继续运行）
+        qDebug() << "[MAINWIN] 窗口已隐藏到系统托盘";
+    } else {
+        // 如果托盘不可用（或已销毁），则正常退出
+        qDebug() << "[MAINWIN] 正常关闭窗口";
+        saveSettings();         // 保存设置
+        event->accept();
+    }
 }
 
 MainWindow::~MainWindow()
@@ -643,4 +653,67 @@ void MainWindow::onGlobalHotkeyTriggered()
         this->raise();
         this->activateWindow();
     }
+}
+
+// ==================== 系统托盘实现 ====================
+
+void MainWindow::createTrayIcon()
+{
+    // 如果系统不支持托盘，直接返回
+    if (!QSystemTrayIcon::isSystemTrayAvailable()) {
+        qWarning() << "System tray is not available on this platform.";
+        return;
+    }
+
+    trayIcon_ = new QSystemTrayIcon(this);
+    trayIcon_->setIcon(QIcon(":/icons/app.png"));   // 复用项目已有的图标资源
+    trayIcon_->setToolTip("Azur Agent\n企业等候您的指令");
+
+    // ---- 创建右键菜单 ----
+    trayMenu_ = new QMenu(this);
+
+    QAction *showAction = new QAction("显示窗口", this);
+    QAction *hideAction = new QAction("隐藏窗口", this);
+    QAction *quitAction = new QAction("退出", this);
+
+    connect(showAction, &QAction::triggered, this, &MainWindow::show);
+    connect(hideAction, &QAction::triggered, this, &MainWindow::hide);
+    connect(quitAction, &QAction::triggered, this, &MainWindow::quitApplication);
+
+    trayMenu_->addAction(showAction);
+    trayMenu_->addAction(hideAction);
+    trayMenu_->addSeparator();
+    trayMenu_->addAction(quitAction);
+
+    trayIcon_->setContextMenu(trayMenu_);
+
+    // ---- 点击托盘图标（左键/双击）切换窗口 ----
+    connect(trayIcon_, &QSystemTrayIcon::activated,
+            this, &MainWindow::onTrayIconActivated);
+
+    trayIcon_->show();
+}
+
+void MainWindow::onTrayIconActivated(QSystemTrayIcon::ActivationReason reason)
+{
+    // 左键单击或双击时切换窗口显隐
+    if (reason == QSystemTrayIcon::Trigger || reason == QSystemTrayIcon::DoubleClick) {
+        if (this->isVisible()) {
+            this->hide();
+        } else {
+            this->show();
+            this->raise();
+            this->activateWindow();
+        }
+    }
+}
+
+void MainWindow::quitApplication()
+{
+    // 先隐藏托盘，防止退出时残留图标
+    if (trayIcon_) {
+        trayIcon_->hide();
+        trayIcon_->deleteLater();
+    }
+    QApplication::quit();
 }

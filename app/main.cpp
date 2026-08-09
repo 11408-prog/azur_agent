@@ -58,6 +58,9 @@ int main(int argc, char *argv[])
 
     QApplication app(argc,argv);
 
+    //设置应用不因最后一个窗口关闭而退出（托盘中常驻）
+    app.setQuitOnLastWindowClosed(false);
+
     app.setWindowIcon(QIcon(":/icons/app.png"));
 
     //获取ela初始化
@@ -65,6 +68,7 @@ int main(int argc, char *argv[])
     qInstallMessageHandler(logToFile);//安装日志钩子
     qDebug()<<"========程序运行成功========";
     app.setWindowIcon(QIcon(":/app/resources/app_icon.png"));
+
     //创建并显示窗口
     MainWindow w;
     w.showMaximized();

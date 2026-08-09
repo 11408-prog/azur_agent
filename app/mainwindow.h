@@ -18,6 +18,8 @@
 #include <ElaPushButton.h>
 #include <ElaIcon.h>
 
+#include <QSystemTrayIcon>
+#include <QMenu>
 #include <QSlider>
 #include <QPropertyAnimation>
 #include <QGraphicsOpacityEffect>
@@ -58,7 +60,7 @@ protected:
     void closeEvent(QCloseEvent *event) override;
     bool nativeEvent(const QByteArray &eventType, void *message, qintptr *result) override;
 
-private slots:
+private slots:   
     void onNewConversation();
     void loadConversation(const QString &id);
 
@@ -68,6 +70,8 @@ private slots:
     void onApiError(const QString &errorMessage);
 
     void onGlobalHotkeyTriggered();
+    void onTrayIconActivated(QSystemTrayIcon::ActivationReason reason);//托盘点击
+    void quitApplication();//退出程序
 
 private:
 
@@ -119,6 +123,11 @@ private:
     bool isWaitingResponse_ = false;
     QString currentConversationId_;
     QString systemPrompt_;
+
+    //新增托盘相关成员
+    QSystemTrayIcon *trayIcon_ = nullptr;
+    QMenu *trayMenu_ = nullptr;
+    void createTrayIcon();               // 创建托盘图标
 };
 
 #endif // MAINWINDOW_H
