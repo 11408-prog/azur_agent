@@ -44,5 +44,4 @@ app/resources/备份/
 *.jpg
 
 # 第三方库二进制文件
-lib/ElaWidgetTools/bin/
-lib/ElaWidgetTools/lib/
+lib/
