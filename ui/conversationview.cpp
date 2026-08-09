@@ -144,10 +144,15 @@ void ConversationView::setupUI()
     updateStatusBarText();
 }
 
-MessageBubbleWidget *ConversationView::appendMessage(const QString &text, bool isUser)
+MessageBubbleWidget *ConversationView::appendMessage(const QString &text, bool isUser,
+                                                       const QDateTime &timestamp)
 {
     MessageBubbleWidget *bubble = new MessageBubbleWidget(isUser, messageContainer_);
-    bubble->setTimestamp(QDateTime::currentDateTime().toString("HH:mm"));
+    // 传入的时间戳无效（默认参数没传，代表这是一条刚发生的新消息）就用当前时间；
+    // 加载历史消息时会传入消息真实创建时的时间，不能让它在这里被重新赋值成"现在"，
+    // 否则每次重新打开一个老对话，所有历史消息都会显示成刚刚发的。
+    const QDateTime ts = timestamp.isValid() ? timestamp : QDateTime::currentDateTime();
+    bubble->setTimestamp(ts.toString("yyyy/M/d HH:mm"));
 
     if (isUser) {
         bubble->setUserContent(text);

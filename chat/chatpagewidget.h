@@ -4,6 +4,7 @@
 #include <QWidget>
 #include <QJsonArray>
 #include <QPixmap>
+#include <QDateTime>
 
 class ElaScrollArea;
 class ElaPlainTextEdit;
@@ -35,7 +36,8 @@ public:
     ~ChatPageWidget() override;
 
     // ---- 消息显示 ----
-    void appendMessage(const QString &text, bool isUser, bool showStepIndicator = false);
+    void appendMessage(const QString &text, bool isUser, bool showStepIndicator = false,
+                        const QDateTime &timestamp = QDateTime());
     void clearChatDisplay();
     void restoreConversation(const QJsonArray &messages);
     void showGreeting();

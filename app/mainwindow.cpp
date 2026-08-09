@@ -440,6 +440,7 @@ void MainWindow::onSendClicked()
     QJsonObject userMsg;
     userMsg["role"] = "user";
     userMsg["content"] = text;
+    userMsg["timestamp"] = QDateTime::currentDateTime().toString(Qt::ISODate);
     messageHistory_.append(userMsg);
 
     // 创建 AI 回复气泡占位

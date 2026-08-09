@@ -42,6 +42,7 @@ private:
     QString generateId() const;
     QString conversationFilePath(const QString &id) const;
     void sortMetaByUpdated();
+    QJsonArray backfillMissingTimestamps(const QString &id, const QJsonArray &messages);
 
 };
 

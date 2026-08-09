@@ -245,9 +245,10 @@ QString ChatPageWidget::timeBasedGreeting() const
     return greeting + "，指挥官。";
 }
 
-void ChatPageWidget::appendMessage(const QString &text, bool isUser, bool showStepIndicator)
+void ChatPageWidget::appendMessage(const QString &text, bool isUser, bool showStepIndicator,
+                                    const QDateTime &timestamp)
 {
-    MessageBubbleWidget *bubble = conversationView_->appendMessage(text, isUser);
+    MessageBubbleWidget *bubble = conversationView_->appendMessage(text, isUser, timestamp);
 
     if (!isUser && showStepIndicator) {
         bubble->enableStepIndicator(true);
@@ -277,7 +278,12 @@ void ChatPageWidget::restoreConversation(const QJsonArray &messages)
         if (role == "assistant" && msg.contains("tool_calls")) continue;
         QString content = msg["content"].toString();
         if (content.isEmpty()) continue;
-        appendMessage(content, role == "user");
+
+        // 消息本身带的时间戳（新消息创建时写入的，老消息由 ConversationManager
+        // 在读取时统一回填过，理论上到这里都应该是有效值）。这里再兜底一次
+        // fromString 解析失败的极端情况，保证不会崩，而不是这个字段本身缺失的常规路径。
+        QDateTime ts = QDateTime::fromString(msg["timestamp"].toString(), Qt::ISODate);
+        appendMessage(content, role == "user", false, ts);
     }
 }
 

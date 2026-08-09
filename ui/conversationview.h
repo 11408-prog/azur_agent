@@ -5,6 +5,7 @@
 #include <QString>
 #include <QLabel>
 #include <QTimer>
+#include <QDateTime>
 
 class ElaScrollArea;
 class ElaPlainTextEdit;
@@ -37,7 +38,8 @@ public:
     // ---- 消息显示 ----
     // 返回新创建的气泡指针，供调用方（比如 Chat 模式）叠加自己的逻辑（如步骤指示器）。
     // isUser == false 且 text 为空时，会显示"思考中"的流式占位动画，并记为"当前 AI 气泡"。
-    MessageBubbleWidget *appendMessage(const QString &text, bool isUser);
+    MessageBubbleWidget *appendMessage(const QString &text, bool isUser,
+                                        const QDateTime &timestamp = QDateTime());
     void clearChatDisplay();
 
     // ---- 流式响应 ----

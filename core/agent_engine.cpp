@@ -158,6 +158,7 @@ void AgentEngine::onResponseCompleted(const QString &fullText)
         QJsonObject aiMsg;
         aiMsg["role"] = "assistant";
         aiMsg["content"] = fullText;
+        aiMsg["timestamp"] = QDateTime::currentDateTime().toString(Qt::ISODate);
         messageHistory_.append(aiMsg);
     }
 

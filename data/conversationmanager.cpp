@@ -84,6 +84,63 @@ QString ConversationManager::conversationFilePath(const QString &id) const
     return dataDir_ + "/chats/" + id + ".json";
 }
 
+// 老数据（改动前存下来的消息）没有 timestamp 字段。用"每次加载都现算成当前时间"
+// 会导致时间一直在变、越看越不对，所以只在第一次遇到缺字段的消息时统一补一个
+// 固定值（用这个对话自己的 updated 时间，好过所有对话全部挤在同一个时刻），
+// 写回磁盘之后，以后加载就不会再触发这个分支了。
+QJsonArray ConversationManager::backfillMissingTimestamps(const QString &id, const QJsonArray &messages)
+{
+    bool needsBackfill = false;
+    for (const QJsonValue &v : messages) {
+        if (v.toObject()["timestamp"].toString().isEmpty()) {
+            needsBackfill = true;
+            break;
+        }
+    }
+    if (!needsBackfill) {
+        return messages;
+    }
+
+    // 找这个对话自己的 updated 时间作为兜底值；找不到就退到"现在"（只会发生在
+    // 元信息和消息文件不一致这种异常情况下，属于最后一道防线）
+    QString fallback = QDateTime::currentDateTime().toString(Qt::ISODate);
+    for (const QJsonValue &v : conversationsMeta_) {
+        QJsonObject meta = v.toObject();
+        if (meta["id"].toString() == id) {
+            QDateTime updated = QDateTime::fromString(meta["updated"].toString(), "yyyy-MM-dd HH:mm:ss");
+            if (updated.isValid()) {
+                fallback = updated.toString(Qt::ISODate);
+            }
+            break;
+        }
+    }
+
+    QJsonArray patched;
+    for (const QJsonValue &v : messages) {
+        QJsonObject msg = v.toObject();
+        if (msg["timestamp"].toString().isEmpty()) {
+            msg["timestamp"] = fallback;
+        }
+        patched.append(msg);
+    }
+
+    // 回填之后立刻写回磁盘，固定下来，避免下次加载又要重新走一遍这个分支
+    QString path = conversationFilePath(id);
+    QFile file(path);
+    if (file.open(QIODevice::WriteOnly)) {
+        QJsonObject obj;
+        obj["id"] = id;
+        obj["messages"] = patched;
+        QJsonDocument doc(obj);
+        file.write(doc.toJson(QJsonDocument::Indented));
+        file.close();
+    } else {
+        qWarning() << "回填时间戳后写回失败:" << path;
+    }
+
+    return patched;
+}
+
 void ConversationManager::sortMetaByUpdated()
 {
     QList<QJsonObject> list;
@@ -119,7 +176,8 @@ QJsonArray ConversationManager::loadConversation(const QString &id)
     QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
     file.close();
     if (doc.isObject()) {
-        return doc.object()["messages"].toArray();
+        QJsonArray messages = doc.object()["messages"].toArray();
+        return backfillMissingTimestamps(id, messages);
     }
     return QJsonArray();
 }
