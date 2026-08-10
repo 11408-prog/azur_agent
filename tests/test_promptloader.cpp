@@ -30,6 +30,16 @@ TEST(PromptLoaderTest, LoadFile_NonExistentFile_ReturnsEmptyStringNotCrash) {
     EXPECT_TRUE(content.isEmpty());
 }
 
+TEST(PromptLoaderTest, LoadFile_FullInstructions_ReturnsNonEmptyContent) {
+    QString content = PromptLoader::loadFile("full/enterprise_instructions.md");
+    EXPECT_FALSE(content.isEmpty());
+}
+
+TEST(PromptLoaderTest, LoadFile_LiteInstructions_ReturnsNonEmptyContent) {
+    QString content = PromptLoader::loadFile("lite/enterprise_instructions.md");
+    EXPECT_FALSE(content.isEmpty());
+}
+
 TEST(PromptLoaderTest, LoadFile_ContentIsTrimmed) {
     // loadFile() 内部做了 trimmed()，返回内容首尾不应该有多余空白/换行
     QString content = PromptLoader::loadFile("lite/enterprise.md");
@@ -78,6 +88,27 @@ TEST(PromptLoaderTest, BuildChatSystemPrompt_Style0And1_ProduceDifferentContent)
 }
 
 // ---------------------------------------------------------------------
+// buildPostHistoryInstructions() —— P1 语气一致性的"历史之后"指令
+// ---------------------------------------------------------------------
+
+TEST(PromptLoaderTest, BuildPostHistoryInstructions_Style0_ReturnsNonEmpty) {
+    QString result = PromptLoader::buildPostHistoryInstructions(0);
+    EXPECT_FALSE(result.isEmpty());
+}
+
+TEST(PromptLoaderTest, BuildPostHistoryInstructions_Style1_ReturnsNonEmpty) {
+    QString result = PromptLoader::buildPostHistoryInstructions(1);
+    EXPECT_FALSE(result.isEmpty());
+}
+
+TEST(PromptLoaderTest, BuildPostHistoryInstructions_Style0And1_ProduceDifferentContent) {
+    // 精简档和完整档应该是两套不同的语气约束，不能退化成同一份
+    QString lite = PromptLoader::buildPostHistoryInstructions(0);
+    QString full = PromptLoader::buildPostHistoryInstructions(1);
+    EXPECT_NE(lite, full);
+}
+
+// ---------------------------------------------------------------------
 // qrc 兜底路径回归测试
 //
 // 这是最重要的一组测试：历史上 app.qrc 里 <file alias="..."> 没有带上
@@ -106,6 +137,19 @@ TEST(PromptLoaderTest, QrcFallback_FullQuotesPathMatchesLoadFileRequest) {
     QFile qrcFile(":/prompts/full/enterprise_quotes.md");
     EXPECT_TRUE(qrcFile.exists())
         << "app.qrc 里的 alias 必须是 \"full/enterprise_quotes.md\"（带子目录前缀）";
+}
+
+TEST(PromptLoaderTest, QrcFallback_FullInstructionsPathMatchesLoadFileRequest) {
+    QFile qrcFile(":/prompts/full/enterprise_instructions.md");
+    EXPECT_TRUE(qrcFile.exists())
+        << "app.qrc 里的 alias 必须是 \"full/enterprise_instructions.md\"（带子目录前缀），"
+           "否则 loadFile() 的 qrc 兜底会静默失效";
+}
+
+TEST(PromptLoaderTest, QrcFallback_LiteInstructionsPathMatchesLoadFileRequest) {
+    QFile qrcFile(":/prompts/lite/enterprise_instructions.md");
+    EXPECT_TRUE(qrcFile.exists())
+        << "app.qrc 里的 alias 必须是 \"lite/enterprise_instructions.md\"（带子目录前缀）";
 }
 
 TEST(PromptLoaderTest, QrcFallback_ContentActuallyReadable) {

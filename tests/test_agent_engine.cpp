@@ -136,6 +136,58 @@ TEST_F(AgentEngineTest, Start_LocalModelBaseUrl_InjectsSystemPromptIntoFirstUser
 }
 
 // ---------------------------------------------------------------------
+// post_history_instructions 注入（P1 语气一致性）：
+//   云端模型 → 追加一条尾部 system 消息
+//   本地模型 → 拼到最后一条消息的 content（无 system 角色）
+//   指令为空 → 消息结构与现在完全一致
+// ---------------------------------------------------------------------
+
+TEST_F(AgentEngineTest, Start_CloudModelWithPostHistoryInstructions_AppendsTrailingSystemMessage) {
+    engine->start("key", "https://api.deepseek.com", "model",
+                  userHistory("你好"), "系统提示词", QJsonArray(), "",
+                  "保持企业的沉稳语气");
+
+    ASSERT_EQ(fakeClient->sendCalls.size(), 1);
+    QJsonArray messages = fakeClient->sendCalls[0].messages;
+    ASSERT_GE(messages.size(), 2); // system + user + 尾部 system
+
+    QJsonObject last = messages.last().toObject();
+    EXPECT_EQ(last["role"].toString(), "system");
+    EXPECT_TRUE(last["content"].toString().contains("保持企业的沉稳语气"));
+}
+
+TEST_F(AgentEngineTest, Start_LocalModelWithPostHistoryInstructions_AppendsToLastMessage) {
+    engine->start("key", "http://localhost:11434", "llama3",
+                  userHistory("你好"), "系统提示词", QJsonArray(), "",
+                  "保持企业的沉稳语气");
+
+    ASSERT_EQ(fakeClient->sendCalls.size(), 1);
+    QJsonArray messages = fakeClient->sendCalls[0].messages;
+
+    // 本地模型对 role=system 遵循度差，指令不应新增 system 角色消息
+    for (const QJsonValue &v : messages) {
+        EXPECT_NE(v.toObject()["role"].toString(), "system");
+    }
+
+    ASSERT_FALSE(messages.isEmpty());
+    QString lastContent = messages.last().toObject()["content"].toString();
+    EXPECT_TRUE(lastContent.contains("保持企业的沉稳语气"));
+}
+
+TEST_F(AgentEngineTest, Start_EmptyPostHistoryInstructions_StructureUnchanged) {
+    // 指令为空 → 行为与现在完全一致：不追加尾部 system 消息
+    engine->start("key", "https://api.deepseek.com", "model",
+                  userHistory("你好"), "系统提示词", QJsonArray(), "", "");
+
+    ASSERT_EQ(fakeClient->sendCalls.size(), 1);
+    QJsonArray messages = fakeClient->sendCalls[0].messages;
+    // 只有开头的 system + 这条 user，共 2 条
+    ASSERT_EQ(messages.size(), 2);
+    EXPECT_EQ(messages.last().toObject()["role"].toString(), "user");
+    EXPECT_EQ(messages.last().toObject()["content"].toString(), "你好");
+}
+
+// ---------------------------------------------------------------------
 // 信号转发：client_ 的信号应该原样（或加工后）转发成 AgentEngine 自己的信号
 // ---------------------------------------------------------------------
 

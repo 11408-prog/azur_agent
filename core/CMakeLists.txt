@@ -10,4 +10,6 @@ target_sources(agent_ PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/promptloader.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/contextpolicy.h
     ${CMAKE_CURRENT_SOURCE_DIR}/contextpolicy.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ttsclient.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/ttsclient.cpp
 )

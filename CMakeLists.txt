@@ -8,7 +8,7 @@ if(MSVC)
     add_compile_options(/Zc:__cplusplus /permissive-)
 endif()
 
-find_package(Qt6 6.5 REQUIRED COMPONENTS Core Widgets Network Sql)
+find_package(Qt6 6.5 REQUIRED COMPONENTS Core Widgets Network Sql Multimedia)
 qt_standard_project_setup()
 
 # ============ ElaWidgetTools 预编译库 ============
@@ -59,6 +59,7 @@ target_link_libraries(agent_
         Qt::Core
         Qt::Widgets
         Qt::Network
+        Qt::Multimedia
         Ela::Widgets
 )
 

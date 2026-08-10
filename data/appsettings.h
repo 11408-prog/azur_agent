@@ -38,6 +38,13 @@ void setShowStatusBar(bool show);
 int chatPromptMode();        // 0=精简, 1=完整
 void setChatPromptMode(int mode);
 
+// ---- 语音朗读 ----
+bool ttsEnabled();
+void setTtsEnabled(bool enabled);
+
+QString ttsVoice();
+void setTtsVoice(const QString &voice);
+
 } // namespace AppSettings
 
 #endif // APPSETTINGS_H

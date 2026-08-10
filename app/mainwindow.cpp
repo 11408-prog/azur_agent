@@ -224,6 +224,22 @@ MainWindow::MainWindow(QWidget *parent)
         }
     });
 
+    // ==================== 语音朗读（P2） ====================
+
+    tts_ = new TtsClient(this);
+    mediaPlayer_ = new QMediaPlayer(this);
+    audioOutput_ = new QAudioOutput(this);
+    audioOutput_->setVolume(1.0);
+    mediaPlayer_->setAudioOutput(audioOutput_);
+
+    connect(tts_, &TtsClient::synthesized, this, [this](const QString &path) {
+        mediaPlayer_->setSource(QUrl::fromLocalFile(path));
+        mediaPlayer_->play();
+    });
+    connect(tts_, &TtsClient::failed, this, [](const QString &errorMessage) {
+        qWarning() << "[TTS] 合成失败:" << errorMessage;
+    });
+
     // ==================== 构建 UI 导航 ====================
 
     setupNavigation();
@@ -232,6 +248,7 @@ MainWindow::MainWindow(QWidget *parent)
         qWarning() << "systemPrompt_ 为空：未能从 prompt 文件读取到内容，"
                       "请确认 app.qrc 引用的资源文件存在。";
     }
+    postHistoryInstructions_ = buildPostHistoryInstructions();
 
     // ==================== 加载背景图（设置开启时才加载） ====================
 
@@ -462,6 +479,8 @@ void MainWindow::setupAboutPage()
 void MainWindow::onSendClicked()
 {
     qDebug()<<"[MAINWIN] onSendClicked | isWaitingResponse_="<<isWaitingResponse_;
+    // 发送新消息时停掉正在播的语音，避免和新的朗读重叠
+    if (mediaPlayer_) mediaPlayer_->stop();
     const QString text = lastUserMessage_;
 
     QString apiKey = settingsPageWidget_->apiKey();
@@ -499,7 +518,8 @@ void MainWindow::onSendClicked()
 
     // 启动 AgentEngine
     chatEngine_->start(apiKey, settingsPageWidget_->baseUrl(), settingsPageWidget_->modelName(),
-                       messageHistory_, systemPrompt_, QJsonArray(), QString());
+                       messageHistory_, systemPrompt_, QJsonArray(), QString(),
+                       postHistoryInstructions_);
     chatPageWidget_->setInputEnabled(false);
     isWaitingResponse_ = true;
 }
@@ -541,6 +561,11 @@ void MainWindow::onApiResponseCompleted(const QString &fullText)
         conversationManager_->conversationsMeta(), currentConversationId_);
     chatPageWidget_->setInputEnabled(true);
     isWaitingResponse_ = false;
+
+    // 语音朗读：设置开启时，把整段回复合成成 mp3 并播放（edge-tts，P2）
+    if (AppSettings::ttsEnabled() && !fullText.isEmpty()) {
+        tts_->synthesize(fullText, AppSettings::ttsVoice());
+    }
 }
 
 void MainWindow::onApiError(const QString &errorMessage)
@@ -599,6 +624,7 @@ void MainWindow::onNewConversation()
     isWaitingResponse_ = false;
 
     systemPrompt_ = buildSystemPrompt();
+    postHistoryInstructions_ = buildPostHistoryInstructions();
     QString newId = conversationManager_->createNewConversation("新对话");
     if (newId.isEmpty()) return;
     currentConversationId_ = newId;
@@ -705,6 +731,12 @@ QString MainWindow::buildSystemPrompt() const
 {
     // 统一走 PromptLoader，避免两处实现不一致
     return PromptLoader::buildChatSystemPrompt(AppSettings::chatPromptMode());
+}
+
+QString MainWindow::buildPostHistoryInstructions() const
+{
+    // 统一走 PromptLoader，与 system prompt 的分档保持一致
+    return PromptLoader::buildPostHistoryInstructions(AppSettings::chatPromptMode());
 }
 
 

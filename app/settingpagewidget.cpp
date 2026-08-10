@@ -282,7 +282,59 @@ void SettingPageWidget::setupUI()
     rootLayout->addWidget(agentCard);
 
     // ============================================================
-    // 卡片 3：界面与外观
+    // 卡片 3：语音朗读
+    // ============================================================
+    QFrame *ttsCard = createCard(this);
+    QVBoxLayout *ttsLayout = new QVBoxLayout(ttsCard);
+    ttsLayout->setContentsMargins(20, 16, 20, 16);
+    ttsLayout->setSpacing(12);
+
+    ttsLayout->addLayout(createCardHeader(ttsCard, ElaIconType::CommentDots,
+                                          "语音朗读", "收到回复后自动用 edge-tts 朗读（需联网）"));
+    ttsLayout->addWidget(createSeparator(ttsCard));
+
+    QGridLayout *ttsForm = new QGridLayout();
+    ttsForm->setHorizontalSpacing(14);
+    ttsForm->setVerticalSpacing(12);
+    ttsForm->setColumnStretch(0, 0);
+    ttsForm->setColumnStretch(1, 1);
+
+    ElaText *ttsEnableLabel = new ElaText("启用语音朗读", ttsCard);
+    ttsEnableLabel->setTextPixelSize(13);
+    ttsEnableLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+
+    ttsEnabledCheck_ = new QCheckBox(ttsCard);
+    ttsEnabledCheck_->setChecked(AppSettings::ttsEnabled());
+    checkBoxes_.append(ttsEnabledCheck_);
+    connect(ttsEnabledCheck_, &QCheckBox::stateChanged, this, [this](int state) {
+        bool enabled = (state == Qt::Checked);
+        AppSettings::setTtsEnabled(enabled);
+        if (ttsVoiceCombo_) ttsVoiceCombo_->setEnabled(enabled);
+    });
+    ttsForm->addWidget(ttsEnableLabel, 0, 0);
+    ttsForm->addWidget(ttsEnabledCheck_, 0, 1);
+
+    ElaText *ttsVoiceLabel = new ElaText("音色", ttsCard);
+    ttsVoiceLabel->setTextPixelSize(13);
+    ttsVoiceLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+
+    ttsVoiceCombo_ = new ElaComboBox(ttsCard);
+    ttsVoiceCombo_->setMinimumHeight(34);
+    ttsVoiceCombo_->addItem("晓伊（女声）", "zh-CN-XiaoyiNeural");
+    ttsVoiceCombo_->addItem("晓晓（女声）", "zh-CN-XiaoxiaoNeural");
+    ttsVoiceCombo_->addItem("云希（男声）", "zh-CN-YunxiNeural");
+    ttsVoiceCombo_->addItem("云扬（男声）", "zh-CN-YunyangNeural");
+    ttsVoiceCombo_->setEnabled(ttsEnabledCheck_->isChecked());
+    connect(ttsVoiceCombo_, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, [this](int) { saveSettings(); });
+    ttsForm->addWidget(ttsVoiceLabel, 1, 0);
+    ttsForm->addWidget(ttsVoiceCombo_, 1, 1);
+
+    ttsLayout->addLayout(ttsForm);
+    rootLayout->addWidget(ttsCard);
+
+    // ============================================================
+    // 卡片 4：界面与外观
     // ============================================================
     QFrame *uiCard = createCard(this);
     QVBoxLayout *uiLayout = new QVBoxLayout(uiCard);
@@ -473,6 +525,16 @@ void SettingPageWidget::loadSettings()
     }
     modelComboBox_->setCurrentText(AppSettings::model());
 
+    // 语音朗读
+    if (ttsEnabledCheck_) {
+        ttsEnabledCheck_->setChecked(AppSettings::ttsEnabled());
+    }
+    if (ttsVoiceCombo_) {
+        int idx = ttsVoiceCombo_->findData(AppSettings::ttsVoice());
+        ttsVoiceCombo_->setCurrentIndex(idx >= 0 ? idx : 0);
+        ttsVoiceCombo_->setEnabled(ttsEnabledCheck_ && ttsEnabledCheck_->isChecked());
+    }
+
     syncThemeCombo(AppSettings::themeMode());
     applyTheme();
 }
@@ -484,4 +546,12 @@ void SettingPageWidget::saveSettings()
     AppSettings::setBaseUrl(baseUrlEdit_->text().trimmed());
     AppSettings::setModel(modelComboBox_->currentText());
     AppSettings::setRecentModels(recentModels_);
+
+    // 语音朗读
+    if (ttsEnabledCheck_) {
+        AppSettings::setTtsEnabled(ttsEnabledCheck_->isChecked());
+    }
+    if (ttsVoiceCombo_) {
+        AppSettings::setTtsVoice(ttsVoiceCombo_->currentData().toString());
+    }
 }

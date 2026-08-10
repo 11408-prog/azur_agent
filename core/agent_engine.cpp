@@ -26,7 +26,8 @@ void AgentEngine::start(const QString &apiKey, const QString &baseUrl, const QSt
                          const QList<QJsonObject> &messageHistory,
                          const QString &systemPrompt,
                          const QJsonArray &tools,
-                         const QString &workspaceRoot)
+                         const QString &workspaceRoot,
+                         const QString &postHistoryInstructions)
 {
     cancel();
 
@@ -34,6 +35,7 @@ void AgentEngine::start(const QString &apiKey, const QString &baseUrl, const QSt
     baseUrl_ = baseUrl;
     model_ = model;
     systemPrompt_ = systemPrompt;
+    postHistoryInstructions_ = postHistoryInstructions;
     tools_ = tools;
     workspaceRoot_ = workspaceRoot;
     messageHistory_ = messageHistory;
@@ -120,6 +122,27 @@ void AgentEngine::sendRequest()
         }
         messages.append(m);
     }
+
+    // 注入"历史之后"的语气约束指令（P1 语气一致性）。位置在历史之后、生成之前，
+    // 是离生成点最近的一段指令，能有效防止对话变长后人设漂移。
+    // 为空时跳过，行为与现在完全一致。
+    if (!postHistoryInstructions_.isEmpty() && !messages.isEmpty()) {
+        if (isLocalModel) {
+            // 本地模型对 role=system 遵循度差：拼到最后一条消息的 content 里。
+            // 正常流程中这就是当前这条 user 消息，恰好位于历史之后、生成之前。
+            QJsonObject last = messages.last().toObject();
+            last["content"] = last["content"].toString()
+                              + "\n\n---\n\n" + postHistoryInstructions_;
+            messages[messages.size() - 1] = last;
+        } else {
+            // 云端模型：追加一条尾部 system 消息
+            QJsonObject instrMsg;
+            instrMsg["role"] = "system";
+            instrMsg["content"] = postHistoryInstructions_;
+            messages.append(instrMsg);
+        }
+    }
+
     //打印最终发给模型的消息
     qDebug() << "[ENGINE] ====== 最终请求消息 ======";
     qDebug() << "[ENGINE] 模型:" << model_;

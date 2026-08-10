@@ -22,11 +22,15 @@ public:
 
     // 启动一轮 Agent 循环
     //   messageHistory : 已经包含当前用户消息的完整历史（不含 system prompt，引擎内部会加）
+    //   postHistoryInstructions : 历史之后的语气约束指令（P1 语气一致性）。
+    //     为空则行为与现在完全一致；非空时云端模型追加一条尾部 system 消息，
+    //     本地模型拼到最后一条消息的 content 里（位于历史之后、生成之前）。
     void start(const QString &apiKey, const QString &baseUrl, const QString &model,
                const QList<QJsonObject> &messageHistory,
                const QString &systemPrompt,
                const QJsonArray &tools,
-               const QString &workspaceRoot);
+               const QString &workspaceRoot,
+               const QString &postHistoryInstructions = QString());
 
     void cancel();
     bool isRunning() const { return isRunning_; }
@@ -77,6 +81,7 @@ private:
     QString baseUrl_;
     QString model_;
     QString systemPrompt_;
+    QString postHistoryInstructions_;
     QJsonArray tools_;
     QString workspaceRoot_;
     QStringList allowedPaths_;

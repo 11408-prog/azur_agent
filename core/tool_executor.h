@@ -50,6 +50,11 @@ public:
     static void setPythonInterpreterPath(const QString &path);
     static void setPythonToolCliPath(const QString &path);
 
+    // 解析（并缓存）Python 解释器与 cli.py 的路径。公开给 ttsclient 等
+    // 复用同一套定位逻辑（TTS 脚本 tts_cli.py 与 cli.py 同目录）。
+    static QString pythonInterpreterPath();
+    static QString toolCliPath();
+
 private:
 
     static QString readFile(const QString &workspaceRoot, const QJsonObject &args, bool *ok, QString *displayLabel);
@@ -61,10 +66,6 @@ private:
     static QString executeViaPython(const QString &workspaceRoot, const QString &toolName,
                                     const QJsonObject &arguments, bool *ok,
                                     QString *displayLabel, bool *backendAvailable);
-
-    // 解析（并缓存）Python 解释器与 cli.py 的路径
-    static QString pythonInterpreterPath();
-    static QString toolCliPath();
 
     static bool s_usePythonBackend;
     static QString s_pythonInterpreter;

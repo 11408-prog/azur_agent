@@ -57,4 +57,10 @@ void setShowStatusBar(bool show){store().setValue("showStatusBar",show);}
 
 int chatPromptMode() { return store().value("chatPromptMode", 0).toInt(); }
 void setChatPromptMode(int mode) { store().setValue("chatPromptMode", mode); }
+
+bool ttsEnabled() { return store().value("ttsEnabled", false).toBool(); }
+void setTtsEnabled(bool enabled) { store().setValue("ttsEnabled", enabled); }
+
+QString ttsVoice() { return store().value("ttsVoice", "zh-CN-XiaoyiNeural").toString(); }
+void setTtsVoice(const QString &voice) { store().setValue("ttsVoice", voice); }
 }

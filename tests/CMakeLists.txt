@@ -14,6 +14,7 @@ set(TEST_SOURCES
     ../core/promptloader.cpp
     ../core/ai_client.cpp
     ../core/agent_engine.cpp
+    ../core/ttsclient.cpp
 )
 
 include(FetchContent)
@@ -32,6 +33,7 @@ add_executable(azur_agent_tests
     test_ai_client.cpp
     test_agent_engine.cpp
     test_python_backend.cpp
+    test_tts_client.cpp
     ${TEST_SOURCES}
     # app.qrc 打包进测试可执行文件，是为了测试 PromptLoader::loadFile()
     # 在 RESOURCES_DIR 源码树路径不可用时，回退读取 qrc 内容这条路径

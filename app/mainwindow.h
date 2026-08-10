@@ -40,10 +40,13 @@
 #include <QTimer>
 #include <QElapsedTimer>
 #include <QUrl>
+#include <QMediaPlayer>
+#include <QAudioOutput>
 
 #include "core/ai_client.h"
 #include "data/conversationmanager.h"
 #include "core/agent_engine.h"
+#include "core/ttsclient.h"
 
 class ChatPageWidget;
 class SettingPageWidget;
@@ -95,6 +98,8 @@ private:
 
     // ---- Prompt 构建 ----
     QString buildSystemPrompt() const;
+    // 历史之后的语气约束指令（P1），见 PromptLoader::buildPostHistoryInstructions
+    QString buildPostHistoryInstructions() const;
 
     // ---- AppBar 按钮更新 ----
     void updateToggleButtonState();
@@ -130,11 +135,17 @@ private:
     bool isWaitingResponse_ = false;
     QString currentConversationId_;
     QString systemPrompt_;
+    QString postHistoryInstructions_;
 
     //新增托盘相关成员
     QSystemTrayIcon *trayIcon_ = nullptr;
     QMenu *trayMenu_ = nullptr;
     void createTrayIcon();               // 创建托盘图标
+
+    // ---- 语音朗读 ----
+    TtsClient *tts_ = nullptr;
+    QMediaPlayer *mediaPlayer_ = nullptr;
+    QAudioOutput *audioOutput_ = nullptr;
 };
 
 #endif // MAINWINDOW_H

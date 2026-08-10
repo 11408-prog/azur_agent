@@ -49,3 +49,19 @@ QString PromptLoader::buildChatSystemPrompt(int style)
     }
     return content;
 }
+
+QString PromptLoader::buildPostHistoryInstructions(int style)
+{
+    // style: 0 = 精简，1 = 完整。与 buildChatSystemPrompt 的分档保持一致。
+    if (style == 1) {
+        QString content = loadFile("full/enterprise_instructions.md");
+        if (!content.isEmpty()) return content;
+        qWarning() << "[PromptLoader] full/enterprise_instructions.md 未找到";
+        return QString();
+    }
+
+    QString content = loadFile("lite/enterprise_instructions.md");
+    if (!content.isEmpty()) return content;
+    qWarning() << "[PromptLoader] lite/enterprise_instructions.md 未找到";
+    return QString();
+}

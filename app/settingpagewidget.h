@@ -55,6 +55,10 @@ private:
     QLabel *bgValueLabel_ = nullptr;
     QList<QCheckBox *> checkBoxes_;
     QStringList recentModels_;
+
+    // ---- 语音朗读 ----
+    QCheckBox *ttsEnabledCheck_ = nullptr;
+    ElaComboBox *ttsVoiceCombo_ = nullptr;
 };
 
 #endif // SETTINGPAGEWIDGET_H
