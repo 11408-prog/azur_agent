@@ -47,6 +47,7 @@
 #include "data/conversationmanager.h"
 #include "core/agent_engine.h"
 #include "core/ttsclient.h"
+#include "core/memoryclient.h"
 
 class ChatPageWidget;
 class SettingPageWidget;
@@ -78,6 +79,8 @@ private slots:
     void onTrayIconActivated(QSystemTrayIcon::ActivationReason reason);//托盘点击
     void quitApplication();//退出程序
 
+    void onVoicePreviewRequested(const QString &text, const QString &voice);
+
 private:
 
 #ifdef Q_OS_WIN
@@ -100,6 +103,8 @@ private:
     QString buildSystemPrompt() const;
     // 历史之后的语气约束指令（P1），见 PromptLoader::buildPostHistoryInstructions
     QString buildPostHistoryInstructions() const;
+    // 历史之后的完整指令 = P1 语气约束 + 事实记忆（每次发送前现算，不缓存）
+    QString buildContextInstructions() const;
 
     // ---- AppBar 按钮更新 ----
     void updateToggleButtonState();
@@ -135,7 +140,6 @@ private:
     bool isWaitingResponse_ = false;
     QString currentConversationId_;
     QString systemPrompt_;
-    QString postHistoryInstructions_;
 
     //新增托盘相关成员
     QSystemTrayIcon *trayIcon_ = nullptr;
@@ -146,6 +150,12 @@ private:
     TtsClient *tts_ = nullptr;
     QMediaPlayer *mediaPlayer_ = nullptr;
     QAudioOutput *audioOutput_ = nullptr;
+
+    // ---- 事实记忆（P3） ----
+    MemoryClient *memoryClient_ = nullptr;
+    // 防止上一轮记忆抽取还没完成就发下一轮：抽取是 LLM 调用，可能较慢，
+    // 对话里连续几轮回复很快时不该每次都叠一个并发进程。
+    bool memoryRequestPending_ = false;
 };
 
 #endif // MAINWINDOW_H

@@ -45,6 +45,18 @@ void setTtsEnabled(bool enabled);
 QString ttsVoice();
 void setTtsVoice(const QString &voice);
 
+// ---- 事实记忆（P3） ----
+// 开启后每次回复结束会用 LLM 抽取「值得长期记住的事实」，并在后续请求注入。
+// 默认关闭：不开启则完全不产生额外的 LLM 调用，行为与过去完全一致。
+bool memoryEnabled();
+void setMemoryEnabled(bool enabled);
+
+// ---- 工具调用 ----
+// 工作区根目录：read_file / list_directory 只能访问这个目录内的路径。
+// 为空表示未启用工具调用（MainWindow 传空 tools 数组给引擎）。
+QString workspaceRoot();
+void setWorkspaceRoot(const QString &path);
+
 } // namespace AppSettings
 
 #endif // APPSETTINGS_H

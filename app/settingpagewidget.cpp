@@ -20,6 +20,8 @@
 #include <QDebug>
 #include <QFrame>
 #include <QCheckBox>
+#include <QLineEdit>
+#include <QFileDialog>
 
 SettingPageWidget::SettingPageWidget(QWidget *parent)
     : QWidget(parent)
@@ -46,6 +48,11 @@ QString SettingPageWidget::baseUrl() const
 QString SettingPageWidget::modelName() const
 {
     return modelComboBox_ ? modelComboBox_->currentText().trimmed() : QString();
+}
+
+QString SettingPageWidget::workspaceRoot() const
+{
+    return workspaceRootEdit_ ? workspaceRootEdit_->text().trimmed() : QString();
 }
 
 int SettingPageWidget::bgOpacity() const
@@ -255,7 +262,7 @@ void SettingPageWidget::setupUI()
     agentLayout->setSpacing(12);
 
     agentLayout->addLayout(createCardHeader(agentCard, ElaIconType::Gear,
-                                            "对话设置", "控制系统提示词的详略程度"));
+                                            "对话设置", "控制系统提示词的详略程度与工具访问范围"));
     agentLayout->addWidget(createSeparator(agentCard));
 
     QGridLayout *agentForm = new QGridLayout();
@@ -277,6 +284,53 @@ void SettingPageWidget::setupUI()
     });
     agentForm->addWidget(promptLabel, 0, 0);
     agentForm->addWidget(promptCombo, 0, 1);
+
+    //工作区目录（工具调用：read_file / list_directory 只能访问这个目录内的路径）
+    ElaText *wsLabel = new ElaText("工作区目录", agentCard);
+    wsLabel->setTextPixelSize(13);
+    wsLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+
+    workspaceRootEdit_ = new ElaLineEdit(agentCard);
+    workspaceRootEdit_->setMinimumHeight(34);
+    workspaceRootEdit_->setPlaceholderText(
+        "选择一个目录以启用工具调用（企业可以读取其中的文件）");
+    workspaceRootEdit_->setReadOnly(true); // 路径只通过浏览按钮选，避免手输目录校验失败
+    connect(workspaceRootEdit_, &QLineEdit::editingFinished, this, [this]() {
+        AppSettings::setWorkspaceRoot(workspaceRootEdit_->text().trimmed());
+    });
+
+    ElaPushButton *browseBtn = new ElaPushButton("浏览...", agentCard);
+    browseBtn->setFixedSize(70, 30);
+    connect(browseBtn, &ElaPushButton::clicked, this, [this]() {
+        const QString dir = QFileDialog::getExistingDirectory(
+            this, "选择工作区目录", workspaceRootEdit_->text().trimmed());
+        if (dir.isEmpty()) return;
+        workspaceRootEdit_->setText(dir);
+        AppSettings::setWorkspaceRoot(dir);
+    });
+
+    QHBoxLayout *wsRow = new QHBoxLayout();
+    wsRow->setSpacing(8);
+    wsRow->setContentsMargins(0, 0, 0, 0);
+    wsRow->addWidget(workspaceRootEdit_, 1);
+    wsRow->addWidget(browseBtn);
+    agentForm->addWidget(wsLabel, 1, 0);
+    agentForm->addLayout(wsRow, 1, 1);
+
+    // 事实记忆（P3）：每次回复后用 LLM 抽取「值得长期记住的事实」，注入后续请求。
+    // 默认关闭：开启才会产生额外的 LLM 调用（每轮回复后一次抽取）。
+    ElaText *memoryLabel = new ElaText("事实记忆", agentCard);
+    memoryLabel->setTextPixelSize(13);
+    memoryLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+
+    memoryEnabledCheck_ = new QCheckBox(agentCard);
+    memoryEnabledCheck_->setChecked(AppSettings::memoryEnabled());
+    checkBoxes_.append(memoryEnabledCheck_);
+    connect(memoryEnabledCheck_, &QCheckBox::stateChanged, this, [](int state) {
+        AppSettings::setMemoryEnabled(state == Qt::Checked);
+    });
+    agentForm->addWidget(memoryLabel, 2, 0);
+    agentForm->addWidget(memoryEnabledCheck_, 2, 1);
 
     agentLayout->addLayout(agentForm);
     rootLayout->addWidget(agentCard);
@@ -320,6 +374,10 @@ void SettingPageWidget::setupUI()
 
     ttsVoiceCombo_ = new ElaComboBox(ttsCard);
     ttsVoiceCombo_->setMinimumHeight(34);
+    // 可编辑：既能从预设里选，也能手动输入任意 edge-tts 音色 ID（自定义音色）
+    ttsVoiceCombo_->setEditable(true);
+    ttsVoiceCombo_->lineEdit()->setPlaceholderText(
+        "选择预设，或输入自定义音色 ID（如 ja-JP-NanamiNeural）");
     ttsVoiceCombo_->addItem("晓伊（女声）", "zh-CN-XiaoyiNeural");
     ttsVoiceCombo_->addItem("晓晓（女声）", "zh-CN-XiaoxiaoNeural");
     ttsVoiceCombo_->addItem("云希（男声）", "zh-CN-YunxiNeural");
@@ -327,8 +385,24 @@ void SettingPageWidget::setupUI()
     ttsVoiceCombo_->setEnabled(ttsEnabledCheck_->isChecked());
     connect(ttsVoiceCombo_, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, [this](int) { saveSettings(); });
+
+    // 试听按钮：复用 TtsClient 合成一句台词并播放，方便对比音色、验证自定义 ID 是否有效
+    ElaPushButton *ttsPreviewBtn = new ElaPushButton("试听", ttsCard);
+    ttsPreviewBtn->setFixedSize(70, 30);
+    connect(ttsPreviewBtn, &ElaPushButton::clicked, this, [this]() {
+        saveSettings();
+        emit voicePreviewRequested(
+            QStringLiteral("指挥官，欢迎回来。今天也要一起加油哦。"),
+            selectedTtsVoice());
+    });
+
+    QHBoxLayout *voiceRow = new QHBoxLayout();
+    voiceRow->setSpacing(8);
+    voiceRow->setContentsMargins(0, 0, 0, 0);
+    voiceRow->addWidget(ttsVoiceCombo_, 1);
+    voiceRow->addWidget(ttsPreviewBtn);
     ttsForm->addWidget(ttsVoiceLabel, 1, 0);
-    ttsForm->addWidget(ttsVoiceCombo_, 1, 1);
+    ttsForm->addLayout(voiceRow, 1, 1);
 
     ttsLayout->addLayout(ttsForm);
     rootLayout->addWidget(ttsCard);
@@ -525,13 +599,28 @@ void SettingPageWidget::loadSettings()
     }
     modelComboBox_->setCurrentText(AppSettings::model());
 
+    // 工作区目录
+    if (workspaceRootEdit_) {
+        workspaceRootEdit_->setText(AppSettings::workspaceRoot());
+    }
+
+    // 事实记忆（P3）
+    if (memoryEnabledCheck_) {
+        memoryEnabledCheck_->setChecked(AppSettings::memoryEnabled());
+    }
+
     // 语音朗读
     if (ttsEnabledCheck_) {
         ttsEnabledCheck_->setChecked(AppSettings::ttsEnabled());
     }
     if (ttsVoiceCombo_) {
-        int idx = ttsVoiceCombo_->findData(AppSettings::ttsVoice());
-        ttsVoiceCombo_->setCurrentIndex(idx >= 0 ? idx : 0);
+        // 可编辑下拉框：匹配到预设就选中对应项，匹配不到（自定义音色 ID）就写进编辑行
+        const QString savedVoice = AppSettings::ttsVoice();
+        if (!savedVoice.isEmpty()) {
+            ttsVoiceCombo_->setCurrentText(savedVoice);
+        } else {
+            ttsVoiceCombo_->setCurrentIndex(0);
+        }
         ttsVoiceCombo_->setEnabled(ttsEnabledCheck_ && ttsEnabledCheck_->isChecked());
     }
 
@@ -547,11 +636,32 @@ void SettingPageWidget::saveSettings()
     AppSettings::setModel(modelComboBox_->currentText());
     AppSettings::setRecentModels(recentModels_);
 
+    // 工作区目录
+    if (workspaceRootEdit_) {
+        AppSettings::setWorkspaceRoot(workspaceRootEdit_->text().trimmed());
+    }
+
+    // 事实记忆（P3）
+    if (memoryEnabledCheck_) {
+        AppSettings::setMemoryEnabled(memoryEnabledCheck_->isChecked());
+    }
+
     // 语音朗读
     if (ttsEnabledCheck_) {
         AppSettings::setTtsEnabled(ttsEnabledCheck_->isChecked());
     }
     if (ttsVoiceCombo_) {
-        AppSettings::setTtsVoice(ttsVoiceCombo_->currentData().toString());
+        AppSettings::setTtsVoice(selectedTtsVoice());
     }
+}
+
+QString SettingPageWidget::selectedTtsVoice() const
+{
+    if (!ttsVoiceCombo_) return QString();
+    const QVariant data = ttsVoiceCombo_->currentData();
+    if (data.isValid() && !data.toString().isEmpty()) {
+        return data.toString();
+    }
+    // 自定义音色：编辑框里手动输入的内容（currentData 无效，currentIndex 为 -1）
+    return ttsVoiceCombo_->currentText().trimmed();
 }

@@ -12,4 +12,6 @@ target_sources(agent_ PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/contextpolicy.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ttsclient.h
     ${CMAKE_CURRENT_SOURCE_DIR}/ttsclient.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/memoryclient.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/memoryclient.cpp
 )

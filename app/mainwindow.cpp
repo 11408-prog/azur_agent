@@ -2,6 +2,8 @@
 #include "chat/chatpagewidget.h"
 #include "app/settingpagewidget.h"
 #include "core/promptloader.h"
+#include "core/tool_executor.h"
+#include "core/memoryclient.h"
 #include "data/appsettings.h"
 #include "ui/theme.h"
 
@@ -188,6 +190,8 @@ MainWindow::MainWindow(QWidget *parent)
     connect(settingsPageWidget_, &SettingPageWidget::connectionTestRequested, this, [this](const QString &apiKey, const QString &baseUrl) {
         client_->testConnection(apiKey, baseUrl);
     });
+    connect(settingsPageWidget_, &SettingPageWidget::voicePreviewRequested,
+            this, &MainWindow::onVoicePreviewRequested);
 
     // ---- 主题：设置页下拉 ↔ AppBar 日/月按钮 双向同步 ----
     connect(settingsPageWidget_, &SettingPageWidget::themeModeChanged, this, [this](int mode) {
@@ -236,8 +240,26 @@ MainWindow::MainWindow(QWidget *parent)
         mediaPlayer_->setSource(QUrl::fromLocalFile(path));
         mediaPlayer_->play();
     });
-    connect(tts_, &TtsClient::failed, this, [](const QString &errorMessage) {
+    connect(tts_, &TtsClient::failed, this, [this](const QString &errorMessage) {
         qWarning() << "[TTS] 合成失败:" << errorMessage;
+        // 弹提示而不是静默失败：自定义音色 ID 填错、edge-tts 未装、没联网
+        // 时用户能立刻知道原因（试听场景尤其需要）
+        ElaMessageBar::error(ElaMessageBarType::TopRight, "语音合成失败",
+                             errorMessage, 5000);
+    });
+
+    // ==================== 事实记忆（P3） ====================
+
+    memoryClient_ = new MemoryClient(this);
+    connect(memoryClient_, &MemoryClient::memoryUpdated, this, [this](int factCount) {
+        memoryRequestPending_ = false;
+        qDebug() << "[MEMORY] 记忆已更新 | 事实数=" << factCount;
+    });
+    connect(memoryClient_, &MemoryClient::failed, this, [this](const QString &errorMessage) {
+        memoryRequestPending_ = false;
+        // 记忆抽取是尽力而为的副作用，失败不该打断对话，记日志即可（与 TTS 不同，
+        // TTS 失败用户会立刻听到没声音，记忆失败用户感知不到，没必要弹窗打扰）
+        qWarning() << "[MEMORY] 记忆更新失败:" << errorMessage;
     });
 
     // ==================== 构建 UI 导航 ====================
@@ -248,7 +270,6 @@ MainWindow::MainWindow(QWidget *parent)
         qWarning() << "systemPrompt_ 为空：未能从 prompt 文件读取到内容，"
                       "请确认 app.qrc 引用的资源文件存在。";
     }
-    postHistoryInstructions_ = buildPostHistoryInstructions();
 
     // ==================== 加载背景图（设置开启时才加载） ====================
 
@@ -517,9 +538,17 @@ void MainWindow::onSendClicked()
     chatPageWidget_->appendMessage(QString(), false, true);
 
     // 启动 AgentEngine
+    // 工具调用（read_file / list_directory，只读）：只有设置了有效的工作区目录才
+    // 把工具定义传给模型，让企业能读取目录内的文件（走 Python 后端执行）；
+    // 没设置时 tools 传空数组，保持旧行为——模型看不到任何工具。
+    QJsonArray tools;
+    const QString workspaceRoot = settingsPageWidget_->workspaceRoot();
+    if (!workspaceRoot.isEmpty() && QDir(workspaceRoot).exists()) {
+        tools = ToolExecutor::toolDefinitions();
+    }
     chatEngine_->start(apiKey, settingsPageWidget_->baseUrl(), settingsPageWidget_->modelName(),
-                       messageHistory_, systemPrompt_, QJsonArray(), QString(),
-                       postHistoryInstructions_);
+                       messageHistory_, systemPrompt_, tools, workspaceRoot,
+                       buildContextInstructions());
     chatPageWidget_->setInputEnabled(false);
     isWaitingResponse_ = true;
 }
@@ -566,6 +595,17 @@ void MainWindow::onApiResponseCompleted(const QString &fullText)
     if (AppSettings::ttsEnabled() && !fullText.isEmpty()) {
         tts_->synthesize(fullText, AppSettings::ttsVoice());
     }
+
+    // 事实记忆（P3）：设置开启时，本轮 user+assistant 结束后用 LLM 抽取新事实。
+    // 放在 saveConversation 之后，确保 messageHistory_ 已包含完整本轮对话。
+    // memoryRequestPending_ 防止上一轮抽取还没完成又叠一个并发进程。
+    if (AppSettings::memoryEnabled() && memoryClient_ && !memoryRequestPending_) {
+        memoryRequestPending_ = true;
+        memoryClient_->updateMemory(settingsPageWidget_->apiKey(),
+                                    settingsPageWidget_->baseUrl(),
+                                    settingsPageWidget_->modelName(),
+                                    messageHistory_);
+    }
 }
 
 void MainWindow::onApiError(const QString &errorMessage)
@@ -576,6 +616,21 @@ void MainWindow::onApiError(const QString &errorMessage)
     ElaMessageBar::error(ElaMessageBarType::TopRight, "请求失败", errorMessage, 5000);
     chatPageWidget_->setInputEnabled(true);
     isWaitingResponse_ = false;
+}
+
+// ==================== 语音试听（设置页） ====================
+
+void MainWindow::onVoicePreviewRequested(const QString &text, const QString &voice)
+{
+    // 试听与"是否开启自动朗读"无关：用户可能正在挑选音色，还没勾启用开关
+    if (mediaPlayer_) mediaPlayer_->stop();
+    if (text.trimmed().isEmpty() || voice.trimmed().isEmpty()) {
+        ElaMessageBar::warning(ElaMessageBarType::TopRight, "试听",
+                               "请先选择或填写一个音色 ID", 3000);
+        return;
+    }
+    tts_->synthesize(text, voice);
+    // 合成成功会走 synthesized → 播放；失败走 failed → 弹错误提示
 }
 
 // ==================== 会话管理 ====================
@@ -624,7 +679,6 @@ void MainWindow::onNewConversation()
     isWaitingResponse_ = false;
 
     systemPrompt_ = buildSystemPrompt();
-    postHistoryInstructions_ = buildPostHistoryInstructions();
     QString newId = conversationManager_->createNewConversation("新对话");
     if (newId.isEmpty()) return;
     currentConversationId_ = newId;
@@ -737,6 +791,24 @@ QString MainWindow::buildPostHistoryInstructions() const
 {
     // 统一走 PromptLoader，与 system prompt 的分档保持一致
     return PromptLoader::buildPostHistoryInstructions(AppSettings::chatPromptMode());
+}
+
+QString MainWindow::buildContextInstructions() const
+{
+    // 历史之后的完整指令 = P1 语气约束 + （可选）事实记忆。
+    // 注意：每次发送前都要现算，不能像 postHistoryInstructions_ 那样缓存——
+    // 事实会随对话推进不断更新，缓存会导致注入的记忆始终是旧的。
+    QString instruction = buildPostHistoryInstructions();
+
+    if (AppSettings::memoryEnabled() && memoryClient_) {
+        const QString factsBlock = MemoryClient::buildFactsBlock(MemoryClient::defaultFactsPath());
+        if (!factsBlock.isEmpty()) {
+            if (!instruction.isEmpty()) instruction += "\n\n";
+            instruction += factsBlock;
+        }
+    }
+
+    return instruction;
 }
 
 

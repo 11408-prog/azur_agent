@@ -63,4 +63,10 @@ void setTtsEnabled(bool enabled) { store().setValue("ttsEnabled", enabled); }
 
 QString ttsVoice() { return store().value("ttsVoice", "zh-CN-XiaoyiNeural").toString(); }
 void setTtsVoice(const QString &voice) { store().setValue("ttsVoice", voice); }
+
+bool memoryEnabled() { return store().value("memoryEnabled", false).toBool(); }
+void setMemoryEnabled(bool enabled) { store().setValue("memoryEnabled", enabled); }
+
+QString workspaceRoot() { return store().value("workspaceRoot").toString().trimmed(); }
+void setWorkspaceRoot(const QString &path) { store().setValue("workspaceRoot", path); }
 }
