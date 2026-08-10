@@ -8,7 +8,7 @@ if(MSVC)
     add_compile_options(/Zc:__cplusplus /permissive-)
 endif()
 
-find_package(Qt6 6.5 REQUIRED COMPONENTS Core Widgets Network Sql Multimedia)
+find_package(Qt6 6.5 REQUIRED COMPONENTS Core Widgets Network Multimedia)
 qt_standard_project_setup()
 
 # ============ ElaWidgetTools 预编译库 ============
@@ -84,7 +84,7 @@ install(SCRIPT ${deploy_script})
 
 # ---------- 单元测试（默认关闭，避免主程序构建依赖 GitHub 网络访问） ----------
 # 需要跑测试时：cmake .. -DAZUR_BUILD_TESTS=ON
-option(AZUR_BUILD_TESTS "Build unit tests (requires network access to fetch GoogleTest)" ON)
+option(AZUR_BUILD_TESTS "Build unit tests (requires network access to fetch GoogleTest)" OFF)
 
 if(AZUR_BUILD_TESTS)
     enable_testing()
