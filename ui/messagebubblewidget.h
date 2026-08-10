@@ -54,6 +54,7 @@ private:
     QLabel *createAvatar();
     void createStepIndicator();
     void updateBubbleMaxWidth();
+    void applyMarkdownTheme();
     void renderMarkdown(const QString &markdown);
 
     bool isUser_;

@@ -1,3 +1,4 @@
+*.json
 
 # Build directories
 build*/

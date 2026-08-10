@@ -127,14 +127,12 @@ void ConversationView::applyTheme()
         "}"
         "ElaPlainTextEdit:focus {"
         "   border-color: %4;"
-        "   background: %5;"
         "}"
         )
         .arg(UiTheme::qss(UiTheme::surface()),
              UiTheme::qss(UiTheme::border()),
              UiTheme::qss(UiTheme::textPrimary()),
-             UiTheme::qss(UiTheme::accent()),
-             UiTheme::qss(UiTheme::surface())));
+             UiTheme::qss(UiTheme::accent())));
 
     // 发送按钮：accent 实心 + hover accentHover
     sendButton_->setStyleSheet(QString(

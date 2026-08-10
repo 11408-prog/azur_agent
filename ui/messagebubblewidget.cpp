@@ -4,7 +4,6 @@
 #include "ui/theme.h"
 
 #include <ElaText.h>
-#include <ElaMessageBar.h>
 #include <ElaTheme.h>
 
 #include <QLabel>
@@ -12,9 +11,8 @@
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QTextBrowser>
+#include <QFont>
 #include <QFile>
-#include <QGuiApplication>
-#include <QClipboard>
 #include <QDesktopServices>
 #include <QUrl>
 #include <QDateTime>
@@ -117,17 +115,8 @@ void MessageBubbleWidget::initUI()
     contentBrowser_->setVisible(false);
 
     connect(contentBrowser_, &QTextBrowser::anchorClicked, this, [this](const QUrl &url) {
-        const QString link = url.toString();
-        if (link == "azur://showall") {
+        if (url.toString() == "azur://showall") {
             renderFullContent();
-        } else if (link.startsWith("copycode:")) {
-            bool ok = false;
-            int idx = link.mid(9).toInt(&ok);
-            const QStringList blocks = contentBrowser_->property("codeBlocks").toStringList();
-            if (ok && idx >= 0 && idx < blocks.size()) {
-                QGuiApplication::clipboard()->setText(blocks.at(idx));
-                ElaMessageBar::success(ElaMessageBarType::TopRight, "已复制", "代码已复制到剪贴板", 1500);
-            }
         } else {
             QDesktopServices::openUrl(url);
         }
@@ -272,10 +261,20 @@ void MessageBubbleWidget::setAiContent(const QString &markdown)
     renderMarkdown(markdown);
 }
 
+void MessageBubbleWidget::applyMarkdownTheme()
+{
+    contentBrowser_->document()->setDefaultStyleSheet(MarkdownRenderer::styleSheet(UiTheme::dark()));
+    QFont f = contentBrowser_->font();
+    f.setPixelSize(15);
+    contentBrowser_->setFont(f);
+}
+
 void MessageBubbleWidget::renderMarkdown(const QString &markdown)
 {
     userText_->setVisible(false);
     contentBrowser_->setVisible(true);
+
+    applyMarkdownTheme();
 
     int lineCount = markdown.count('\n');
     if (lineCount > kLazyRenderThreshold) {
@@ -293,17 +292,12 @@ void MessageBubbleWidget::renderMarkdown(const QString &markdown)
             }
         }
         QString preview = (endPos > 0) ? markdown.left(endPos) : markdown;
-        preview += "\n\n---\n\n<a href=\"azur://showall\" style=\"color: " + UiTheme::linkColor().name()
-                   + "; text-decoration: none;\">[显示全部内容]</a>";
+        preview += "\n\n---\n\n[显示全部内容](azur://showall)";
 
-        QStringList codeBlocks;
-        contentBrowser_->setHtml(MarkdownRenderer::toHtml(preview, &codeBlocks));
-        contentBrowser_->setProperty("codeBlocks", codeBlocks);
+        contentBrowser_->setMarkdown(preview);
     } else {
         fullMarkdown_.clear();
-        QStringList codeBlocks;
-        contentBrowser_->setHtml(MarkdownRenderer::toHtml(markdown, &codeBlocks));
-        contentBrowser_->setProperty("codeBlocks", codeBlocks);
+        contentBrowser_->setMarkdown(markdown);
     }
     MarkdownRenderer::adjustTextBrowserHeight(contentBrowser_);
 }
@@ -311,9 +305,8 @@ void MessageBubbleWidget::renderMarkdown(const QString &markdown)
 void MessageBubbleWidget::renderFullContent()
 {
     if (fullMarkdown_.isEmpty()) return;
-    QStringList codeBlocks;
-    contentBrowser_->setHtml(MarkdownRenderer::toHtml(fullMarkdown_, &codeBlocks));
-    contentBrowser_->setProperty("codeBlocks", codeBlocks);
+    applyMarkdownTheme();
+    contentBrowser_->setMarkdown(fullMarkdown_);
     fullMarkdown_.clear();
     MarkdownRenderer::adjustTextBrowserHeight(contentBrowser_);
 }
