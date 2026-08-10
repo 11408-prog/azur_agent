@@ -24,12 +24,14 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(googletest)
 
 add_executable(azur_agent_tests
+    test_main.cpp
     test_tool_executor.cpp
     test_context_policy.cpp
     test_appsettings.cpp
     test_promptloader.cpp
     test_ai_client.cpp
     test_agent_engine.cpp
+    test_python_backend.cpp
     ${TEST_SOURCES}
     # app.qrc 打包进测试可执行文件，是为了测试 PromptLoader::loadFile()
     # 在 RESOURCES_DIR 源码树路径不可用时，回退读取 qrc 内容这条路径
@@ -41,6 +43,8 @@ add_executable(azur_agent_tests
 # （见根 CMakeLists.txt）保持一致，这样"从真实文件读取"这条路径也能测到。
 target_compile_definitions(azur_agent_tests PRIVATE
     RESOURCES_DIR="${CMAKE_SOURCE_DIR}/app/resources"
+    # test_python_backend.cpp 用项目根定位 azur_agent 虚拟环境与 python/azur_tools/cli.py
+    PROJECT_ROOT_DIR="${CMAKE_SOURCE_DIR}"
 )
 
 find_package(Qt6 COMPONENTS Core Network Test REQUIRED)
@@ -49,7 +53,7 @@ target_link_libraries(azur_agent_tests
     Qt6::Core
     Qt6::Network          # ai_client.cpp 用到 QNetworkAccessManager/QNetworkReply
     Qt6::Test              # test_ai_client.cpp 用 QSignalSpy 观察信号
-    gtest_main
+    gtest                  # main 由 test_main.cpp 提供（需先建 QCoreApplication）
     # 注：测试覆盖的源文件完全不依赖 ElaWidgetTools，测试目标不链接
     # Ela::Widgets，这样跑单元测试不需要先编译 ElaWidgetTools 库（这一步
     # 在只想构建主程序时也是可选的，见根 CMakeLists.txt 的 AZUR_BUILD_TESTS

@@ -2,6 +2,7 @@
 #include <ElaApplication.h>
 
 #include "app/mainwindow.h"
+#include "core/tool_executor.h"
 
 #include<QApplication>
 #include<QDateTime>
@@ -68,6 +69,10 @@ int main(int argc, char *argv[])
     qInstallMessageHandler(logToFile);//安装日志钩子
     qDebug()<<"========程序运行成功========";
     app.setWindowIcon(QIcon(":/app/resources/app_icon.png"));
+
+    //启用 Python 工具后端（read_file / list_directory 走 azur_agent 虚拟环境执行，
+    // 基础设施不可用时自动回退原生实现）
+    ToolExecutor::setUsePythonBackend(true);
 
     //创建并显示窗口
     MainWindow w;

@@ -4,8 +4,34 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QDebug>
+#include <QProcess>
+#include <QCoreApplication>
+#include <QJsonDocument>
+#include <QJsonParseError>
 
 QStringList ToolExecutor::s_allowedPaths;
+bool ToolExecutor::s_usePythonBackend = false;
+QString ToolExecutor::s_pythonInterpreter;
+QString ToolExecutor::s_toolCliPath;
+
+namespace {
+
+// 从可执行文件所在目录向上回溯，找到第一个包含 target（相对路径）的目录。
+QString findUpward(const QStringList &targets)
+{
+    QDir dir(QCoreApplication::applicationDirPath());
+    while (true) {
+        for (const QString &t : targets) {
+            if (dir.exists(t)) {
+                return QDir::cleanPath(dir.absoluteFilePath(t));
+            }
+        }
+        if (!dir.cdUp()) break;
+    }
+    return QString();
+}
+
+} // namespace
 
 namespace {
 
@@ -100,6 +126,103 @@ void ToolExecutor::setAllowedPaths(const QStringList &paths)
 {
     qDebug()<<"[TOOL_EXEC] setAllowedPaths | 路径数="<<paths.size();
     s_allowedPaths = paths;
+}
+
+// ==================== Python 后端 ====================
+
+void ToolExecutor::setUsePythonBackend(bool use)
+{
+    s_usePythonBackend = use;
+    qDebug()<<"[TOOL_EXEC] setUsePythonBackend | use="<<use;
+}
+
+bool ToolExecutor::usePythonBackend()
+{
+    return s_usePythonBackend;
+}
+
+void ToolExecutor::setPythonInterpreterPath(const QString &path)
+{
+    s_pythonInterpreter = path;
+}
+
+void ToolExecutor::setPythonToolCliPath(const QString &path)
+{
+    s_toolCliPath = path;
+}
+
+QString ToolExecutor::pythonInterpreterPath()
+{
+    if (!s_pythonInterpreter.isEmpty()) return s_pythonInterpreter;
+#ifdef Q_OS_WIN
+    static QString cached = findUpward({QStringLiteral("azur_agent/Scripts/python.exe")});
+#else
+    static QString cached = findUpward({QStringLiteral("azur_agent/bin/python"),
+                                        QStringLiteral("azur_agent/bin/python3")});
+#endif
+    return cached;
+}
+
+QString ToolExecutor::toolCliPath()
+{
+    if (!s_toolCliPath.isEmpty()) return s_toolCliPath;
+    static QString cached = findUpward({QStringLiteral("python/azur_tools/cli.py")});
+    return cached;
+}
+
+QString ToolExecutor::executeViaPython(const QString &workspaceRoot, const QString &toolName,
+                                       const QJsonObject &arguments, bool *ok,
+                                       QString *displayLabel, bool *backendAvailable)
+{
+    *backendAvailable = false;
+    *ok = false;
+    *displayLabel = QStringLiteral("Python 工具后端不可用");
+
+    const QString interpreter = pythonInterpreterPath();
+    const QString cli = toolCliPath();
+    if (interpreter.isEmpty() || cli.isEmpty()) {
+        return QStringLiteral("错误：Python 工具后端不可用（找不到 azur_agent 虚拟环境或 cli.py）");
+    }
+
+    QJsonObject req;
+    req["workspaceRoot"] = workspaceRoot;
+    req["toolName"] = toolName;
+    req["arguments"] = arguments;
+    QJsonArray allowed;
+    for (const QString &p : s_allowedPaths) allowed.append(p);
+    req["allowedPaths"] = allowed;
+
+    QProcess proc;
+    proc.start(interpreter, {cli});
+    if (!proc.waitForStarted(3000)) {
+        return QStringLiteral("错误：无法启动 Python 解释器: %1").arg(interpreter);
+    }
+    proc.write(QJsonDocument(req).toJson(QJsonDocument::Compact));
+    proc.closeWriteChannel();
+    if (!proc.waitForFinished(10000)) {
+        proc.kill();
+        proc.waitForFinished(1000);
+        return QStringLiteral("错误：Python 工具后端执行超时");
+    }
+
+    const QByteArray out = proc.readAllStandardOutput();
+    const QByteArray err = proc.readAllStandardError();
+    if (!err.trimmed().isEmpty()) {
+        qWarning() << "[TOOL_EXEC] python stderr:" << QString::fromUtf8(err);
+    }
+
+    QJsonParseError parseError;
+    const QJsonDocument doc = QJsonDocument::fromJson(out, &parseError);
+    if (parseError.error != QJsonParseError::NoError || !doc.isObject()) {
+        return QStringLiteral("错误：Python 工具后端返回了无法解析的响应: %1")
+            .arg(QString::fromUtf8(out.left(200)));
+    }
+
+    const QJsonObject resp = doc.object();
+    *ok = resp.value("ok").toBool();
+    *displayLabel = resp.value("displayLabel").toString();
+    *backendAvailable = true;
+    return resp.value("content").toString();
 }
 
 // 把"相对路径"解析成绝对路径，并确保结果没有越出 workspaceRoot 范围（防路径穿越）
@@ -269,6 +392,18 @@ QString ToolExecutor::execute(const QString &workspaceRoot, const QString &toolN
         *ok = false;
         *displayLabel = QStringLiteral("工作区目录无效");
         return QStringLiteral("错误：工作区目录不存在，请先在设置页选择一个有效目录");
+    }
+
+    // Python 后端：后端正常工作（含工具本身执行失败）就直接用其结果；
+    // 只有后端基础设施故障（找不到解释器/进程起不来/超时/坏 JSON）才回退原生，
+    // 并关掉开关，避免每次调用都白试一次。
+    if (s_usePythonBackend) {
+        bool backendAvailable = false;
+        const QString result = executeViaPython(workspaceRoot, toolName, arguments,
+                                                ok, displayLabel, &backendAvailable);
+        if (backendAvailable) return result;
+        qWarning() << "[TOOL_EXEC] Python 后端不可用，回退原生实现: " << result;
+        s_usePythonBackend = false;
     }
 
     if (toolName == QLatin1String("read_file")) {

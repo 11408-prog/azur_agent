@@ -39,11 +39,36 @@ public:
     // 判断某个工具是否涉及写操作（需要用户确认）。当前恒返回 false。
     static bool isWriteTool(const QString &toolName);
 
+    // ---- Python 后端（可选，默认关闭） ----
+    // 开启后 execute() 通过 QProcess 调用 python/azur_tools/cli.py（stdio JSON 协议）
+    // 执行工具；后端不可用（找不到虚拟环境 / 进程启动失败 / 超时 / 坏 JSON）时
+    // 自动回退 C++ 原生实现并关闭开关。
+    static void setUsePythonBackend(bool use);
+    static bool usePythonBackend();
+    // 显式指定 python 解释器 / cli.py 路径；不指定时自动从可执行文件目录向上
+    // 回溯查找 azur_agent/Scripts/python.exe 与 python/azur_tools/cli.py。
+    static void setPythonInterpreterPath(const QString &path);
+    static void setPythonToolCliPath(const QString &path);
+
 private:
 
     static QString readFile(const QString &workspaceRoot, const QJsonObject &args, bool *ok, QString *displayLabel);
     static QString listDirectory(const QString &workspaceRoot, const QJsonObject &args, bool *ok, QString *displayLabel);
 
+    // 通过 Python 后端执行一次工具调用。backendAvailable 表示后端是否正常工作
+    // （工具执行失败也是"正常工作的后端"，backendAvailable=true；进程起不来等
+    // 基础设施故障才是 false）。
+    static QString executeViaPython(const QString &workspaceRoot, const QString &toolName,
+                                    const QJsonObject &arguments, bool *ok,
+                                    QString *displayLabel, bool *backendAvailable);
+
+    // 解析（并缓存）Python 解释器与 cli.py 的路径
+    static QString pythonInterpreterPath();
+    static QString toolCliPath();
+
+    static bool s_usePythonBackend;
+    static QString s_pythonInterpreter;
+    static QString s_toolCliPath;
     static QStringList s_allowedPaths;
 };
 

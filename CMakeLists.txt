@@ -83,7 +83,7 @@ install(SCRIPT ${deploy_script})
 
 # ---------- 单元测试（默认关闭，避免主程序构建依赖 GitHub 网络访问） ----------
 # 需要跑测试时：cmake .. -DAZUR_BUILD_TESTS=ON
-option(AZUR_BUILD_TESTS "Build unit tests (requires network access to fetch GoogleTest)" OFF)
+option(AZUR_BUILD_TESTS "Build unit tests (requires network access to fetch GoogleTest)" ON)
 
 if(AZUR_BUILD_TESTS)
     enable_testing()

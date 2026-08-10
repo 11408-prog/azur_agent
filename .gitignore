@@ -46,3 +46,8 @@ app/resources/备份/
 
 # 第三方库二进制文件
 lib/
+
+# Python 虚拟环境与缓存
+azur_agent/
+__pycache__/
+*.pyc
