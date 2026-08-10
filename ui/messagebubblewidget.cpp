@@ -98,6 +98,7 @@ void MessageBubbleWidget::initUI()
 
     userText_ = new ElaText(bubble_);
     userText_->setTextStyle(ElaTextType::Body);
+    userText_->setTextPixelSize(15); // 与 AI 正文 15px 保持一致
     userText_->setWordWrap(true);
     userText_->setVisible(false);
     bubbleLayout_->addWidget(userText_);
