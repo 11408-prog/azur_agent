@@ -215,10 +215,11 @@ void MemoryClient::updateMemory(const QString &apiKey, const QString &baseUrl, c
         return;
     }
 
-    startProcess(apiKey, baseUrl, model, messages);
+    startProcess(interpreter, cli, apiKey, baseUrl, model, messages);
 }
 
-void MemoryClient::startProcess(const QString &apiKey, const QString &baseUrl, const QString &model,
+void MemoryClient::startProcess(const QString &interpreter, const QString &cli,
+                                const QString &apiKey, const QString &baseUrl, const QString &model,
                                 const QList<QJsonObject> &messages)
 {
     const QString factsPath = factsPath_.isEmpty() ? defaultFactsPath() : factsPath_;
@@ -260,13 +261,20 @@ void MemoryClient::startProcess(const QString &apiKey, const QString &baseUrl, c
     req["messages"] = msgs;
     req["existingFacts"] = existingFacts;
 
-    proc_->start(interpreter_, {cli_});
+    proc_->start(interpreter, {cli});
+    // start() 失败（如 FailedToStart）时，errorOccurred 会同步触发并走 onErrorOccurred
+    // → cleanupProc() 把 proc_ 置空。这里必须检查，否则下面的 write 会解引用空指针崩溃。
+    if (!proc_) return;
     proc_->write(QJsonDocument(req).toJson(QJsonDocument::Compact));
     proc_->closeWriteChannel();
 }
 
 void MemoryClient::onFinished()
 {
+    // 防御：若进程因启动失败已在 onErrorOccurred 里被 cleanupProc 清理（proc_ 已置空），
+    // 这里直接返回，避免继续读已释放的 QProcess。正常情况下 start 成功才会走到这。
+    if (!proc_) return;
+
     QString errorMsg;
 
     if (timeoutTriggered_) {

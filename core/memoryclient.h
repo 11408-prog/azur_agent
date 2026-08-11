@@ -63,7 +63,10 @@ private slots:
     void onTimeout();
 
 private:
-    void startProcess(const QString &apiKey, const QString &baseUrl, const QString &model,
+    // interpreter/cli 由调用方（updateMemory）解析后传入，避免直接使用未设置的成员
+    // 导致 QProcess::start 拿到空程序名而同步触发 FailedToStart 后继续写空指针。
+    void startProcess(const QString &interpreter, const QString &cli,
+                      const QString &apiKey, const QString &baseUrl, const QString &model,
                       const QList<QJsonObject> &messages);
     void cleanupProc();
 

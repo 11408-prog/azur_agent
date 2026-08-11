@@ -11,6 +11,7 @@
 #include <QSignalSpy>
 
 #include "core/memoryclient.h"
+#include "core/tool_executor.h"
 
 // ---------------------------------------------------------------------
 // MemoryClient 的纯函数测试（不需要网络 / 不需要真实 LLM 调用）
@@ -78,6 +79,29 @@ QString writeMemoryStubScript(const QString &dirPath)
     return path;
 }
 
+// 写一个名为 memory_cli.py 的 stub（放在 dirPath 下）。updateMemory 自动解析 cli 路径时
+// 会用 ToolExecutor::toolCliPath() 的目录 + "/memory_cli.py"，所以必须叫这个名字才能命中。
+QString writeMemoryCliStub(const QString &dirPath)
+{
+    const QString path = dirPath + "/memory_cli.py";
+    QFile f(path);
+    if (!f.open(QIODevice::WriteOnly)) {
+        ADD_FAILURE() << "无法写 memory_cli.py stub: " << qPrintable(path);
+        return QString();
+    }
+    const char *script =
+        "import sys, json\n"
+        "sys.stdin.reconfigure(encoding='utf-8')\n"
+        "sys.stdout.reconfigure(encoding='utf-8')\n"
+        "raw = sys.stdin.read()\n"
+        "req = json.loads(raw)\n"
+        "facts = json.dumps([{'key': 'auto_key', 'value': '自动解析', 'confidence': 0.9}], ensure_ascii=False)\n"
+        "print(json.dumps({'ok': True, 'content': facts}))\n";
+    f.write(script);
+    f.close();
+    return path;
+}
+
 } // namespace
 
 class MemoryClientTest : public ::testing::Test {
@@ -89,6 +113,9 @@ protected:
     }
 
     void TearDown() override {
+        // 复位 ToolExecutor 静态路径，避免本类里依赖自动解析的用例污染其它测试
+        ToolExecutor::setPythonInterpreterPath(QString());
+        ToolExecutor::setPythonToolCliPath(QString());
         delete tempDir;
     }
 
@@ -299,4 +326,41 @@ TEST_F(MemoryClientTest, Lifecycle_StubScriptSuccessWritesFactsAndEmitsMemoryUpd
     const QString block = MemoryClient::buildFactsBlock(factsPath);
     EXPECT_TRUE(block.contains("test_key"));
     EXPECT_TRUE(block.contains("测试值"));
+}
+
+// 回归测试：MemoryClient 不显式 setInterpreterPath/setCliPath，而是靠 ToolExecutor 自动
+// 解析解释器与 memory_cli.py 路径。修复前 startProcess 用了从未被设置的成员变量
+// （interpreter_/cli_ 都是空串），QProcess::start("") 同步触发 FailedToStart 后，
+// onErrorOccurred 把 proc_ 置空，startProcess 继续 write 空指针 → 段错误闪退。
+TEST_F(MemoryClientTest, Lifecycle_AutoResolveInterpreterAndCliFromToolExecutor) {
+    if (!QFile::exists(venvInterpreter())) {
+        GTEST_SKIP() << "未找到 azur_agent 虚拟环境，跳过";
+    }
+
+    // stub 必须以 memory_cli.py 命名放在 ToolExecutor::toolCliPath() 所在目录，
+    // 才能被 updateMemory 的自动解析（目录 + "/memory_cli.py"）命中。
+    const QString stub = writeMemoryCliStub(tempDir->path());
+    ASSERT_FALSE(stub.isEmpty());
+    ToolExecutor::setPythonInterpreterPath(venvInterpreter());
+    ToolExecutor::setPythonToolCliPath(tempDir->path() + "/cli.py");
+
+    MemoryClient client;
+    client.setFactsPath(factsPath);
+
+    QSignalSpy updatedSpy(&client, &MemoryClient::memoryUpdated);
+    QSignalSpy failedSpy(&client, &MemoryClient::failed);
+
+    QJsonObject msg;
+    msg["role"] = "user";
+    msg["content"] = "我叫小明";
+    client.updateMemory("sk-test", "https://api.deepseek.com", "deepseek-v4-flash", {msg});
+
+    // 修复前这段代码会在 updateMemory 内部同步段错误崩溃（进程直接退出），根本到不了 wait。
+    ASSERT_TRUE(updatedSpy.wait(10000)) << "超时未收到 memoryUpdated 信号";
+    EXPECT_EQ(failedSpy.count(), 0);
+    EXPECT_EQ(updatedSpy.takeFirst().at(0).toInt(), 1);
+
+    const QString block = MemoryClient::buildFactsBlock(factsPath);
+    EXPECT_TRUE(block.contains("auto_key"));
+    EXPECT_TRUE(block.contains("自动解析"));
 }

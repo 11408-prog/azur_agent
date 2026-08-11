@@ -100,10 +100,11 @@ void TtsClient::synthesize(const QString &text, const QString &voice)
         return;
     }
 
-    startProcess(text, voice, outputPath);
+    startProcess(interpreter, cli, text, voice, outputPath);
 }
 
-void TtsClient::startProcess(const QString &text, const QString &voice, const QString &outputPath)
+void TtsClient::startProcess(const QString &interpreter, const QString &cli,
+                             const QString &text, const QString &voice, const QString &outputPath)
 {
     proc_ = new QProcess(this);
     proc_->setProcessChannelMode(QProcess::SeparateChannels);
@@ -124,7 +125,10 @@ void TtsClient::startProcess(const QString &text, const QString &voice, const QS
     req["voice"] = voice;
     req["output"] = outputPath;
 
-    proc_->start(interpreter_, {cli_});
+    proc_->start(interpreter, {cli});
+    // start() 失败（如 FailedToStart）时，errorOccurred 会同步触发并走 onErrorOccurred
+    // → cleanupProc() 把 proc_ 置空。这里必须检查，否则下面的 write 会解引用空指针崩溃。
+    if (!proc_) return;
     // QProcess 会缓冲写入，进程启动后自然送过去；不用 waitForStarted，避免阻塞 UI。
     proc_->write(QJsonDocument(req).toJson(QJsonDocument::Compact));
     proc_->closeWriteChannel();
@@ -132,6 +136,10 @@ void TtsClient::startProcess(const QString &text, const QString &voice, const QS
 
 void TtsClient::onFinished()
 {
+    // 防御：若进程因启动失败已在 onErrorOccurred 里被 cleanupProc 清理（proc_ 已置空），
+    // 这里直接返回，避免继续读已释放的 QProcess。正常情况下 start 成功才会走到这。
+    if (!proc_) return;
+
     QString errorMsg;
 
     if (timeoutTriggered_) {

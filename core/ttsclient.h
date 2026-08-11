@@ -37,7 +37,10 @@ private slots:
 private:
     QString ttsCacheDir() const;
     void cleanupOldFiles() const;
-    void startProcess(const QString &text, const QString &voice, const QString &outputPath);
+    // interpreter/cli 由调用方（synthesize）解析后传入，避免直接使用未设置的成员
+    // 导致 QProcess::start 拿到空程序名而同步触发 FailedToStart 后继续写空指针。
+    void startProcess(const QString &interpreter, const QString &cli,
+                      const QString &text, const QString &voice, const QString &outputPath);
     void cleanupProc();
 
     QProcess *proc_ = nullptr;

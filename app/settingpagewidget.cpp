@@ -22,6 +22,7 @@
 #include <QCheckBox>
 #include <QLineEdit>
 #include <QFileDialog>
+#include <QSignalBlocker>
 
 SettingPageWidget::SettingPageWidget(QWidget *parent)
     : QWidget(parent)
@@ -225,9 +226,14 @@ static QFrame* createConnectionCard(QWidget *rootParent, SettingPageWidget *self
     modelCombo->setEditable(true);
     modelCombo->setMinimumHeight(34);
     modelCombo->addItems({"deepseek-v4-flash", "deepseek-v4-pro"});
-    QObject::connect(modelCombo, &QComboBox::currentTextChanged, self, [self](const QString &) {
+    // 保存时机：手动输入在回车/失焦时提交（editingFinished），从下拉列表选择在选中时保存（activated）。
+    // 不要用 currentTextChanged——可编辑下拉框每次敲键都会触发它，导致保存过于频繁，还可能在
+    // 其它字段还没填好时把半截/空值写进配置（历史 bug：重新进入设置页时网址/密钥/模型被重置）。
+    QObject::connect(modelCombo, &QComboBox::activated, self, [self](int) {
         self->saveSettings();
     });
+    QObject::connect(modelCombo->lineEdit(), &QLineEdit::editingFinished,
+                     self, &SettingPageWidget::saveSettings);
     form->addWidget(modelLabel, 2, 0);
     form->addWidget(modelCombo, 2, 1);
 
@@ -587,17 +593,27 @@ void SettingPageWidget::applyTheme()
 void SettingPageWidget::loadSettings()
 {
     qDebug() << "[SETTING] loadSettings";
+
+    // 加载设置只是把已存的值回填到控件上，不应反向触发保存。这里用 QSignalBlocker
+    // 屏蔽两个会连锁触发 saveSettings 的信号（模型/音色下拉框的 setCurrentText 会发
+    // currentTextChanged/currentIndexChanged），避免"load 完立刻 save"把半截/空值写回去。
+    // 注意：屏蔽器是局部的，作用域结束即自动恢复信号连接，不影响后续用户操作。
+
+    // ---- AI 服务连接 ----
     apiKeyEdit_->setText(AppSettings::apiKey());
     baseUrlEdit_->setText(AppSettings::baseUrl());
 
     recentModels_ = AppSettings::recentModels();
-    for (const QString &model : recentModels_) {
-        if (model.isEmpty()) continue;
-        if (modelComboBox_->findText(model) == -1) {
-            modelComboBox_->addItem(model);
+    {
+        QSignalBlocker blocker(modelComboBox_);
+        for (const QString &model : recentModels_) {
+            if (model.isEmpty()) continue;
+            if (modelComboBox_->findText(model) == -1) {
+                modelComboBox_->addItem(model);
+            }
         }
+        modelComboBox_->setCurrentText(AppSettings::model());
     }
-    modelComboBox_->setCurrentText(AppSettings::model());
 
     // 工作区目录
     if (workspaceRootEdit_) {
@@ -615,6 +631,7 @@ void SettingPageWidget::loadSettings()
     }
     if (ttsVoiceCombo_) {
         // 可编辑下拉框：匹配到预设就选中对应项，匹配不到（自定义音色 ID）就写进编辑行
+        QSignalBlocker blocker(ttsVoiceCombo_);
         const QString savedVoice = AppSettings::ttsVoice();
         if (!savedVoice.isEmpty()) {
             ttsVoiceCombo_->setCurrentText(savedVoice);
@@ -631,9 +648,19 @@ void SettingPageWidget::loadSettings()
 void SettingPageWidget::saveSettings()
 {
     qDebug() << "[SETTING] saveSettings";
-    AppSettings::setApiKey(apiKeyEdit_->text());
-    AppSettings::setBaseUrl(baseUrlEdit_->text().trimmed());
-    AppSettings::setModel(modelComboBox_->currentText());
+
+    // 空值保护：编辑框为空时不写回，避免把已有配置覆盖成空（历史 bug：重新进入设置页时
+    // 网址/密钥/模型被重置成默认）。代价是"清空某个字段"无法通过删除内容保存，当前场景
+    // 下这不是常用操作；若以后需要，可另加专门的"清空"入口。
+    if (!apiKeyEdit_->text().trimmed().isEmpty()) {
+        AppSettings::setApiKey(apiKeyEdit_->text().trimmed());
+    }
+    if (!baseUrlEdit_->text().trimmed().isEmpty()) {
+        AppSettings::setBaseUrl(baseUrlEdit_->text().trimmed());
+    }
+    if (!modelComboBox_->currentText().trimmed().isEmpty()) {
+        AppSettings::setModel(modelComboBox_->currentText().trimmed());
+    }
     AppSettings::setRecentModels(recentModels_);
 
     // 工作区目录
