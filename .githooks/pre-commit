@@ -1,0 +1,37 @@
+#!/bin/sh
+# ============================================================
+#  Azur Agent 提交前钩子：跑 C++ + Python 全部测试。
+#
+#  安装（可选，不装不影响提交）:
+#      git config core.hooksPath .githooks
+#
+#  说明：
+#  - 需要先配置好带测试的构建目录（默认 build/，可用环境变量
+#    AZUR_TEST_BUILD_DIR 覆盖，例如指向 build-vscode）。
+#  - 测试没过会阻止提交；觉得没必要可临时跳过：
+#      git commit --no-verify
+# ============================================================
+
+BUILD_DIR="${AZUR_TEST_BUILD_DIR:-build}"
+
+if [ ! -f "$BUILD_DIR/CMakeCache.txt" ]; then
+    echo "[pre-commit] 未找到 $BUILD_DIR/CMakeCache.txt，跳过测试（请先：cmake -B $BUILD_DIR -DAZUR_BUILD_TESTS=ON）"
+    exit 0
+fi
+
+# azur_agent_tests.exe 运行时需要 Qt6 DLL
+export PATH="/c/Qt/6.11.1/mingw_64/bin:/c/Qt/Tools/mingw1310_64/bin:$PATH"
+
+echo "[pre-commit] 运行 ctest（C++ + Python 单元测试）..."
+"/c/Qt/Tools/CMake_64/bin/ctest.exe" --test-dir "$BUILD_DIR" --output-on-failure
+STATUS=$?
+
+if [ $STATUS -ne 0 ]; then
+    echo "[pre-commit] 测试未通过，提交已阻止。"
+    echo "[pre-commit] 详情：ctest --test-dir $BUILD_DIR --output-on-failure"
+    echo "[pre-commit] 想跳过测试直接提交：git commit --no-verify"
+    exit 1
+fi
+
+echo "[pre-commit] 全部测试通过。"
+exit 0

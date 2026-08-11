@@ -6,6 +6,9 @@
 #include <QJsonParseError>
 #include <QByteArray>
 #include <QDebug>
+#include <QSignalSpy>
+
+#include "core/ttsclient.h"
 
 // 验证 python/azur_tools/tts_cli.py 的 stdio JSON 协议（协议级，不需要联网、
 // 不需要真实合成，只要脚本能被解释器跑起来并返回合法 JSON）。
@@ -92,3 +95,24 @@ TEST_F(TtsClientProtocolTest, InvalidJson_ReturnsJsonOkFalse) {
     EXPECT_FALSE(resp.value("ok").toBool());
     EXPECT_FALSE(resp.value("content").toString().isEmpty());
 }
+
+// ---------------------------------------------------------------------
+// 生命周期级：QSignalSpy 观察 TtsClient 的同步失败路径（不联网、不合成）
+// ---------------------------------------------------------------------
+
+TEST_F(TtsClientProtocolTest, Lifecycle_EmptyTextEmitsFailedSynchronously) {
+    TtsClient client;
+    QSignalSpy spy(&client, &TtsClient::failed);
+    client.synthesize("", "zh-CN-XiaoyiNeural");
+    EXPECT_EQ(spy.count(), 1);
+}
+
+TEST_F(TtsClientProtocolTest, Lifecycle_MissingInterpreterOrCliEmitsFailedSynchronously) {
+    TtsClient client;
+    client.setInterpreterPath("C:/nonexistent/python.exe");
+    client.setCliPath("C:/nonexistent/tts_cli.py");
+    QSignalSpy spy(&client, &TtsClient::failed);
+    client.synthesize("你好", "zh-CN-XiaoyiNeural");
+    EXPECT_EQ(spy.count(), 1);
+}
+

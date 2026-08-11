@@ -79,3 +79,14 @@ target_include_directories(azur_agent_tests PRIVATE
 include(GoogleTest)
 
 add_test(NAME azur_agent_tests COMMAND azur_agent_tests)
+
+# ---------- Python 侧单元测试接入 CTest（一次 ctest 跑完 C++ + Python） ----------
+# 用 find_package 找到的系统 Python（test_executor.py / test_memory_cli.py 都是纯标准库，
+# 不需要 azur_agent venv 里的任何包）。测试内部用 __file__ 定位自身路径，与 cwd 无关。
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+add_test(NAME azur_python_executor
+         COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/python/azur_tools/tests/test_executor.py)
+add_test(NAME azur_python_memory_cli
+         COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/python/azur_tools/tests/test_memory_cli.py)
+add_test(NAME azur_python_eval_runner
+         COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/python/azur_tools/tests/test_eval_runner.py)

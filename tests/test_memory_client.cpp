@@ -8,6 +8,7 @@
 #include <QProcess>
 #include <QByteArray>
 #include <QDebug>
+#include <QSignalSpy>
 
 #include "core/memoryclient.h"
 
@@ -51,6 +52,30 @@ QJsonObject makeFact(const QString &key, const QString &value)
     o["key"] = key;
     o["value"] = value;
     return o;
+}
+
+// 写一个 stub python 脚本：读 stdin 请求，固定返回一条事实，模拟 memory_cli.py。
+// 让 MemoryClient 的完整异步链路（updateMemory → QProcess → onFinished → mergeFacts）
+// 不依赖真实 LLM / 网络也能被端到端测试。
+QString writeMemoryStubScript(const QString &dirPath)
+{
+    const QString path = dirPath + "/stub_memory.py";
+    QFile f(path);
+    if (!f.open(QIODevice::WriteOnly)) {
+        ADD_FAILURE() << "无法写 stub 脚本: " << qPrintable(path);
+        return QString();
+    }
+    const char *script =
+        "import sys, json\n"
+        "sys.stdin.reconfigure(encoding='utf-8')\n"
+        "sys.stdout.reconfigure(encoding='utf-8')\n"
+        "raw = sys.stdin.read()\n"
+        "req = json.loads(raw)\n"
+        "facts = json.dumps([{'key': 'test_key', 'value': '测试值', 'confidence': 0.9}], ensure_ascii=False)\n"
+        "print(json.dumps({'ok': True, 'content': facts}))\n";
+    f.write(script);
+    f.close();
+    return path;
 }
 
 } // namespace
@@ -210,4 +235,68 @@ TEST_F(MemoryClientTest, Protocol_InvalidJsonReturnsJsonOkFalse) {
     const QJsonObject resp = doc.object();
     EXPECT_FALSE(resp.value("ok").toBool());
     EXPECT_FALSE(resp.value("content").toString().isEmpty());
+}
+
+// ---------------------------------------------------------------------
+// 生命周期级：QSignalSpy 观察 MemoryClient 的异步链路与失败路径
+// （不用真实 LLM，成功路径用 stub python 脚本代替 memory_cli.py）
+// ---------------------------------------------------------------------
+
+TEST_F(MemoryClientTest, Lifecycle_EmptyApiKeyEmitsFailedSynchronously) {
+    MemoryClient client;
+    client.setFactsPath(factsPath);
+    QSignalSpy spy(&client, &MemoryClient::failed);
+    client.updateMemory("", "https://api.deepseek.com", "deepseek-v4-flash",
+                        {makeFact("_msg", "你好")});
+    EXPECT_EQ(spy.count(), 1);
+}
+
+TEST_F(MemoryClientTest, Lifecycle_EmptyMessagesEmitsFailedSynchronously) {
+    MemoryClient client;
+    client.setFactsPath(factsPath);
+    QSignalSpy spy(&client, &MemoryClient::failed);
+    client.updateMemory("sk-test", "https://api.deepseek.com", "deepseek-v4-flash", {});
+    EXPECT_EQ(spy.count(), 1);
+}
+
+TEST_F(MemoryClientTest, Lifecycle_MissingInterpreterOrCliEmitsFailedSynchronously) {
+    MemoryClient client;
+    client.setFactsPath(factsPath);
+    client.setInterpreterPath("C:/nonexistent/python.exe");
+    client.setCliPath("C:/nonexistent/memory_cli.py");
+    QSignalSpy spy(&client, &MemoryClient::failed);
+    client.updateMemory("sk-test", "https://api.deepseek.com", "deepseek-v4-flash",
+                        {makeFact("_msg", "你好")});
+    EXPECT_EQ(spy.count(), 1);
+}
+
+TEST_F(MemoryClientTest, Lifecycle_StubScriptSuccessWritesFactsAndEmitsMemoryUpdated) {
+    if (!QFile::exists(venvInterpreter())) {
+        GTEST_SKIP() << "未找到 azur_agent 虚拟环境，跳过";
+    }
+
+    const QString stub = writeMemoryStubScript(tempDir->path());
+
+    MemoryClient client;
+    client.setInterpreterPath(venvInterpreter());
+    client.setCliPath(stub);
+    client.setFactsPath(factsPath);
+
+    QSignalSpy updatedSpy(&client, &MemoryClient::memoryUpdated);
+    QSignalSpy failedSpy(&client, &MemoryClient::failed);
+
+    QJsonObject msg;
+    msg["role"] = "user";
+    msg["content"] = "我叫小明";
+    client.updateMemory("sk-test", "https://api.deepseek.com", "deepseek-v4-flash", {msg});
+
+    // 等异步 QProcess 完成（内部起事件循环，QProcess 信号能正常送达）
+    ASSERT_TRUE(updatedSpy.wait(10000)) << "超时未收到 memoryUpdated 信号";
+    EXPECT_EQ(failedSpy.count(), 0);
+    EXPECT_EQ(updatedSpy.takeFirst().at(0).toInt(), 1);  // 合并后 1 条事实
+
+    // facts.json 应已原子写回，且能被 buildFactsBlock 读出来
+    const QString block = MemoryClient::buildFactsBlock(factsPath);
+    EXPECT_TRUE(block.contains("test_key"));
+    EXPECT_TRUE(block.contains("测试值"));
 }
